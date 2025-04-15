@@ -1,34 +1,28 @@
-const express = require("express");
-const { admin, db } = require("../firebase");
-
+const express = require('express');
 const router = express.Router();
+const admin = require('../app');
 
-// Middleware pour vérifier le token Firebase
-const verifyToken = async (req, res, next) => {
-    const token = req.headers.authorization?.split("Bearer ")[1];
+// Créer un nouvel utilisateur
+router.post('/createUser', async (req, res) => {
+  const { email, password, nom, role } = req.body;
 
-    if (!token) {
-        return res.status(401).send("Accès interdit");
-    }
+  try {
+    const userRecord = await admin.auth().createUser({
+      email,
+      password,
+    });
 
-    try {
-        const decodedToken = await admin.auth().verifyIdToken(token);
-        req.user = decodedToken;
-        next();
-    } catch (error) {
-        res.status(403).send("Token invalide");
-    }
-};
+    await admin.firestore().collection('users').doc(userRecord.uid).set({
+      email,
+      nom,
+      role,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
 
-// Récupérer les infos utilisateur
-router.get("/me", verifyToken, async (req, res) => {
-    const user = await db.collection("users").doc(req.user.uid).get();
-    
-    if (!user.exists) {
-        return res.status(404).send("Utilisateur non trouvé");
-    }
-
-    res.send(user.data());
+    res.status(200).send('Utilisateur créé avec succès');
+  } catch (error) {
+    res.status(400).send('Erreur lors de la création du compte');
+  }
 });
 
 module.exports = router;
