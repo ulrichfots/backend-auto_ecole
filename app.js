@@ -6,6 +6,9 @@ const admin = require('firebase-admin');
 const authRoutes = require('./routes/auth');
 const usersRoutes = require('./routes/users');
 
+console.log('authRoutes:', authRoutes);
+console.log('usersRoutes:', usersRoutes);
+
 const app = express();
 
 app.use(cors());
