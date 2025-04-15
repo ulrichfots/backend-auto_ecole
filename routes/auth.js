@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const admin = require('../app');
 
-// Créer un nouvel utilisateur
+// Exemple route de création d'utilisateur
 router.post('/createUser', async (req, res) => {
   const { email, password, nom, role } = req.body;
 
@@ -25,4 +25,4 @@ router.post('/createUser', async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = router; 
