@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const admin = require('../app');
+const admin = require('../firebase');
 const { checkAuth } = require('../middlewares/authMiddleware');
 
 // Exemple de route accessible uniquement par les élèves
