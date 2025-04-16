@@ -5,6 +5,7 @@ const admin = require('./firebase'); // utilise ta config centralisée
 
 const authRoutes = require('./routes/auth');
 const usersRoutes = require('./routes/users');
+const commentsRoutes = require('./routes/comments');
 
 console.log('authRoutes:', authRoutes);
 console.log('usersRoutes:', usersRoutes);
@@ -16,6 +17,7 @@ app.use(bodyParser.json());
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/comments', commentsRoutes);
 
 app.listen(3000, () => {
   console.log('Serveur backend démarré sur le port 3000');
