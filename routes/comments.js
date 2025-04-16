@@ -78,5 +78,8 @@ router.patch('/:id', checkAuth, async (req, res) => {
     }
   });
   
+  console.log('📩 Nouveau commentaire reçu :', req.body);
+console.log('👤 UID :', uid);
+
 
 module.exports = router;

@@ -23,4 +23,11 @@ app.listen(3000, () => {
   console.log('Serveur backend démarré sur le port 3000');
 });
 
+app.use(cors({
+    origin: ['http://localhost:3000', 'http://localhost:8080', 'https://ton-backend.onrender.com'],
+    methods: ['GET', 'POST', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  }));
+  
+
 module.exports = admin;
