@@ -11,7 +11,6 @@ if (!admin.apps.length) {
 
 const bucket = admin.storage().bucket();
 
-// Fonction pour uploader une image
 async function uploadImageToStorage(file) {
   return new Promise((resolve, reject) => {
     const { v4: uuidv4 } = require('uuid');
