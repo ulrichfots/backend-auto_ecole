@@ -27,8 +27,15 @@ async function uploadImageToStorage(file) {
     });
 
     blobStream.on('finish', async () => {
-      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${blob.name}`;
-      resolve(publicUrl);
+      try {
+        // cette ligne pour rendre l'image publique
+        await blob.makePublic();
+
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${blob.name}`;
+        resolve(publicUrl);
+      } catch (err) {
+        reject('Erreur makePublic : ' + err);
+      }
     });
 
     blobStream.end(file.buffer);

@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const { uploadImageToStorage, admin } = require('../firebase');
 const router = express.Router();
+const { createOrUpdateUser } = require('../services/userService');
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -18,6 +19,10 @@ router.post('/', upload.single('image'), async (req, res) => {
     }
 
     const imageUrl = await uploadImageToStorage(req.file);
+
+    await createOrUpdateUser(uid, {
+        profileImageUrl: imageUrl,
+      });
 
     // Mettre à jour Firestore après upload
     await admin.firestore().collection('users').doc(uid).update({
