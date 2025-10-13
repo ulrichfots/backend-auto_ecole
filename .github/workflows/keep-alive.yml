@@ -1,0 +1,26 @@
+name: Keep API Alive
+
+on:
+  schedule:
+    # Ping toutes les 10 minutes (*/10 * * * *)
+    # Pour économiser les minutes GitHub Actions, ping toutes les 14 minutes
+    - cron: '*/14 * * * *'
+  workflow_dispatch: # Permet de déclencher manuellement
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Ping API
+        run: |
+          echo "Pinging API..."
+          curl -f https://votre-app.onrender.com/ping || exit 0
+          echo "API pinged successfully!"
+          
+      - name: Check Health
+        run: |
+          echo "Checking API health..."
+          curl -f https://votre-app.onrender.com/health || exit 0
+          echo "Health check completed!"
+

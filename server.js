@@ -393,6 +393,20 @@ app.get("/", (req, res) => {
   res.send("API Auto École fonctionne !");
 });
 
+// ✅ Health check endpoint pour keep-alive
+app.get("/health", (req, res) => {
+  res.status(200).json({ 
+    status: "ok", 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
+// ✅ Ping endpoint (alternative)
+app.get("/ping", (req, res) => {
+  res.status(200).send("pong");
+});
+
 // ✅ Routes principales
 const authRoutes = require("./routes/auth");
 app.use("/api/auth", authRoutes);

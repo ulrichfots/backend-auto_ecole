@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: autoecole-backend
-    env: node
-    buildCommand: npm install
-    startCommand: npm start
-    envVars:
-      - key: NODE_VERSION
-        value: 18.15.0
