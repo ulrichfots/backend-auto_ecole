@@ -1,11 +1,19 @@
 const admin = require("firebase-admin");
 
 if (!admin.apps.length) {
-  const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  // Essayer d'abord la variable d'environnement, sinon utiliser le fichier
+  let serviceAccount;
+  
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } else {
+    // Fallback vers le fichier serviceAccountKey.json
+    serviceAccount = require('./serviceAccountKey.json');
+  }
 
   admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+    storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "app-auto-ecole.appspot.com",
   });
 }
 
