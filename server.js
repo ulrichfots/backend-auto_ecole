@@ -535,6 +535,171 @@ const swaggerOptions = {
               description: 'Nombre total de pages'
             }
           }
+        },
+        UpcomingSession: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'string',
+              example: 'session123',
+              description: 'ID de la séance'
+            },
+            student: {
+              type: 'object',
+              properties: {
+                id: {
+                  type: 'string',
+                  example: 'student123'
+                },
+                nom: {
+                  type: 'string',
+                  example: 'Marie Dubois'
+                },
+                email: {
+                  type: 'string',
+                  example: 'marie.dubois@email.com'
+                },
+                initials: {
+                  type: 'string',
+                  example: 'MD'
+                }
+              }
+            },
+            instructor: {
+              type: 'object',
+              properties: {
+                id: {
+                  type: 'string',
+                  example: 'instructor123'
+                },
+                nom: {
+                  type: 'string',
+                  example: 'Jean Martin'
+                }
+              }
+            },
+            type: {
+              type: 'string',
+              enum: ['conduite', 'code', 'examen', 'évaluation', 'perfectionnement'],
+              example: 'conduite',
+              description: 'Type de séance'
+            },
+            date: {
+              type: 'string',
+              format: 'date-time',
+              example: '2024-01-20T09:00:00.000Z',
+              description: 'Date de la séance'
+            },
+            time: {
+              type: 'string',
+              example: '09:00',
+              description: 'Heure de la séance'
+            },
+            duration: {
+              type: 'string',
+              example: '1h30',
+              description: 'Durée de la séance'
+            },
+            status: {
+              type: 'string',
+              enum: ['confirmée', 'en_attente', 'annulée'],
+              example: 'confirmée',
+              description: 'Statut de la séance'
+            }
+          }
+        },
+        SessionDashboardStats: {
+          type: 'object',
+          properties: {
+            totalSessions: {
+              type: 'number',
+              example: 8,
+              description: 'Nombre total de séances'
+            },
+            confirmedSessions: {
+              type: 'number',
+              example: 5,
+              description: 'Nombre de séances confirmées'
+            },
+            pendingSessions: {
+              type: 'number',
+              example: 2,
+              description: 'Nombre de séances en attente'
+            },
+            cancelledSessions: {
+              type: 'number',
+              example: 1,
+              description: 'Nombre de séances annulées ce mois'
+            },
+            todaySessions: {
+              type: 'number',
+              example: 0,
+              description: 'Nombre de séances aujourd\'hui'
+            },
+            thisWeekSessions: {
+              type: 'number',
+              example: 0,
+              description: 'Nombre de séances cette semaine'
+            }
+          }
+        },
+        UpdateSession: {
+          type: 'object',
+          properties: {
+            studentId: {
+              type: 'string',
+              example: 'student123',
+              description: 'ID de l\'élève'
+            },
+            instructorId: {
+              type: 'string',
+              example: 'instructor123',
+              description: 'ID de l\'instructeur'
+            },
+            courseType: {
+              type: 'string',
+              enum: ['conduite', 'code', 'examen', 'évaluation', 'perfectionnement'],
+              example: 'conduite',
+              description: 'Type de cours'
+            },
+            courseTitle: {
+              type: 'string',
+              example: 'Cours de conduite niveau 1',
+              description: 'Titre du cours'
+            },
+            scheduledDate: {
+              type: 'string',
+              format: 'date-time',
+              example: '2024-01-20T09:00:00.000Z',
+              description: 'Date programmée'
+            },
+            scheduledTime: {
+              type: 'string',
+              example: '09:00',
+              description: 'Heure programmée'
+            },
+            duration: {
+              type: 'string',
+              example: '1h30',
+              description: 'Durée de la séance'
+            },
+            status: {
+              type: 'string',
+              enum: ['confirmée', 'en_attente', 'annulée'],
+              example: 'confirmée',
+              description: 'Statut de la séance'
+            },
+            location: {
+              type: 'string',
+              example: 'Salle de cours A',
+              description: 'Lieu de la séance'
+            },
+            notes: {
+              type: 'string',
+              example: 'Notes importantes',
+              description: 'Notes sur la séance'
+            }
+          }
         }
       }
     },
