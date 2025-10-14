@@ -234,6 +234,389 @@ router.post('/login', async (req, res) => {
 
 /**
  * @swagger
+ * /api/auth/verify-token:
+ *   get:
+ *     summary: Vérifier la validité d'un token
+ *     description: Vérifie si un token d'authentification est valide et retourne les informations utilisateur
+ *     tags: [Authentification]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Token valide
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 valid:
+ *                   type: boolean
+ *                   example: true
+ *                 user:
+ *                   type: object
+ *                   properties:
+ *                     uid:
+ *                       type: string
+ *                       example: "abc123def456"
+ *                     email:
+ *                       type: string
+ *                       example: "utilisateur@example.com"
+ *                     nom:
+ *                       type: string
+ *                       example: "Jean Dupont"
+ *                     role:
+ *                       type: string
+ *                       enum: [admin, instructeur, eleve]
+ *                       example: "eleve"
+ *                     statut:
+ *                       type: string
+ *                       example: "actif"
+ *                     isFirstLogin:
+ *                       type: boolean
+ *                       example: false
+ *                     profileImageUrl:
+ *                       type: string
+ *                       nullable: true
+ *       401:
+ *         description: Token invalide
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 valid:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Token invalide"
+ */
+router.get('/verify-token', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({
+        valid: false,
+        error: 'Token non fourni'
+      });
+    }
+
+    const token = authHeader.split('Bearer ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    
+    // Récupérer les informations utilisateur depuis Firestore
+    const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
+    
+    if (!userDoc.exists) {
+      return res.status(401).json({
+        valid: false,
+        error: 'Utilisateur non trouvé'
+      });
+    }
+
+    const userData = userDoc.data();
+
+    res.status(200).json({
+      valid: true,
+      user: {
+        uid: userDoc.id,
+        email: userData.email,
+        nom: userData.nom,
+        role: userData.role,
+        statut: userData.statut,
+        isFirstLogin: userData.isFirstLogin || false,
+        profileImageUrl: userData.profileImageUrl || null
+      }
+    });
+
+  } catch (error) {
+    console.error('Erreur vérification token:', error);
+    res.status(401).json({
+      valid: false,
+      error: 'Token invalide'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/refresh-token:
+ *   post:
+ *     summary: Rafraîchir le token d'authentification
+ *     description: Génère un nouveau token d'authentification pour l'utilisateur
+ *     tags: [Authentification]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               rememberMe:
+ *                 type: boolean
+ *                 example: true
+ *                 description: "Se souvenir de l'utilisateur pour un token longue durée"
+ *     responses:
+ *       200:
+ *         description: Token rafraîchi avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Token rafraîchi avec succès"
+ *                 token:
+ *                   type: string
+ *                   example: "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+ *                 expiresIn:
+ *                   type: string
+ *                   example: "1h"
+ *       401:
+ *         description: Token invalide
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Token invalide"
+ */
+router.post('/refresh-token', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({
+        error: 'Token non fourni'
+      });
+    }
+
+    const token = authHeader.split('Bearer ')[1];
+    const decodedToken = await admin.auth().verifyIdToken(token);
+    
+    // Récupérer les informations utilisateur
+    const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
+    
+    if (!userDoc.exists) {
+      return res.status(401).json({
+        error: 'Utilisateur non trouvé'
+      });
+    }
+
+    const userData = userDoc.data();
+    const { rememberMe } = req.body;
+
+    // Générer un nouveau token
+    const customToken = await admin.auth().createCustomToken(decodedToken.uid, {
+      role: userData.role,
+      email: userData.email
+    });
+
+    const expiresIn = rememberMe ? '7d' : '1d';
+
+    res.status(200).json({
+      message: 'Token rafraîchi avec succès',
+      token: customToken,
+      expiresIn: expiresIn
+    });
+
+  } catch (error) {
+    console.error('Erreur refresh token:', error);
+    res.status(401).json({
+      error: 'Token invalide'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: Déconnexion utilisateur
+ *     description: Déconnecte l'utilisateur (côté client, le token sera invalidé)
+ *     tags: [Authentification]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Déconnexion réussie
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Déconnexion réussie"
+ *       401:
+ *         description: Token invalide
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Token invalide"
+ */
+router.post('/logout', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+      return res.status(401).json({
+        error: 'Token non fourni'
+      });
+    }
+
+    const token = authHeader.split('Bearer ')[1];
+    await admin.auth().verifyIdToken(token);
+
+    // Note: Firebase ne permet pas d'invalider les tokens côté serveur
+    // La déconnexion se fait côté client en supprimant le token du stockage local
+    
+    res.status(200).json({
+      message: 'Déconnexion réussie'
+    });
+
+  } catch (error) {
+    console.error('Erreur logout:', error);
+    res.status(401).json({
+      error: 'Token invalide'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/forgot-password:
+ *   post:
+ *     summary: Demande de réinitialisation de mot de passe
+ *     description: Envoie un email de réinitialisation de mot de passe à l'utilisateur
+ *     tags: [Authentification]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - email
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: "utilisateur@example.com"
+ *                 description: "Adresse email de l'utilisateur"
+ *     responses:
+ *       200:
+ *         description: Email de réinitialisation envoyé
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Email de réinitialisation envoyé"
+ *                 email:
+ *                   type: string
+ *                   example: "utilisateur@example.com"
+ *                 expiresIn:
+ *                   type: string
+ *                   example: "10 minutes"
+ *       400:
+ *         description: Email invalide ou utilisateur non trouvé
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Email invalide"
+ *       500:
+ *         description: Erreur serveur
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Erreur interne du serveur"
+ */
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+
+  try {
+    // Vérifier les données d'entrée
+    if (!email) {
+      return res.status(400).json({
+        error: 'Email requis'
+      });
+    }
+
+    // Valider le format email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        error: 'Format d\'email invalide'
+      });
+    }
+
+    // Vérifier si l'utilisateur existe
+    const usersSnapshot = await admin.firestore()
+      .collection('users')
+      .where('email', '==', email)
+      .limit(1)
+      .get();
+
+    if (usersSnapshot.empty) {
+      return res.status(400).json({
+        error: 'Aucun compte trouvé avec cette adresse email'
+      });
+    }
+
+    const userDoc = usersSnapshot.docs[0];
+    const userData = userDoc.data();
+
+    // Générer un token de réinitialisation sécurisé
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Sauvegarder le token dans Firestore
+    await admin.firestore().collection('password_reset_tokens').doc(resetToken).set({
+      userId: userDoc.id,
+      email: email,
+      expiresAt: expiresAt,
+      used: false,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // Envoyer l'email de réinitialisation
+    await emailService.sendPasswordResetEmail(email, resetToken, userData.nom);
+
+    res.status(200).json({
+      message: 'Email de réinitialisation envoyé',
+      email: email,
+      expiresIn: '10 minutes'
+    });
+
+  } catch (error) {
+    console.error('Erreur forgot password:', error);
+    res.status(500).json({
+      error: 'Erreur interne du serveur',
+      details: process.env.NODE_ENV === 'development' ? error.message : 'Une erreur est survenue'
+    });
+  }
+});
+
+/**
+ * @swagger
  * /api/auth/createUser:
  *   post:
  *     summary: Créer un nouvel utilisateur (Admin uniquement)
