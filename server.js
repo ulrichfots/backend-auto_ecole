@@ -378,6 +378,163 @@ const swaggerOptions = {
               }
             }
           }
+        },
+        NewsArticle: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'string',
+              example: 'abc123def456',
+              description: 'ID unique de l\'actualité'
+            },
+            title: {
+              type: 'string',
+              example: 'Nouvelle réglementation du code de la route 2024',
+              description: 'Titre de l\'actualité'
+            },
+            excerpt: {
+              type: 'string',
+              example: 'Les nouvelles règles du code de la route entrent en vigueur ce mois-ci.',
+              description: 'Extrait de l\'actualité'
+            },
+            content: {
+              type: 'string',
+              example: 'Le contenu complet de l\'actualité avec formatage HTML...',
+              description: 'Contenu principal de l\'actualité'
+            },
+            category: {
+              type: 'string',
+              enum: ['actualites', 'reglementation', 'promotions', 'conseils', 'technique', 'nouveau-centre'],
+              example: 'reglementation',
+              description: 'Catégorie de l\'actualité'
+            },
+            status: {
+              type: 'string',
+              enum: ['draft', 'published', 'scheduled'],
+              example: 'published',
+              description: 'Statut de publication'
+            },
+            tags: {
+              type: 'array',
+              items: {
+                type: 'string'
+              },
+              example: ['permis', 'code', 'formation'],
+              description: 'Tags associés à l\'actualité'
+            },
+            allowComments: {
+              type: 'boolean',
+              example: true,
+              description: 'Permettre les commentaires'
+            },
+            pinToTop: {
+              type: 'boolean',
+              example: false,
+              description: 'Épingler en haut de la liste'
+            },
+            authorId: {
+              type: 'string',
+              example: 'abc123def456',
+              description: 'ID de l\'auteur'
+            },
+            authorName: {
+              type: 'string',
+              example: 'Jean Martin',
+              description: 'Nom de l\'auteur'
+            },
+            views: {
+              type: 'number',
+              example: 245,
+              description: 'Nombre de vues'
+            },
+            imageUrl: {
+              type: 'string',
+              nullable: true,
+              example: 'https://storage.googleapis.com/bucket/image.jpg',
+              description: 'URL de l\'image principale'
+            },
+            createdAt: {
+              type: 'string',
+              format: 'date-time',
+              example: '2024-01-20T10:30:00.000Z',
+              description: 'Date de création'
+            },
+            updatedAt: {
+              type: 'string',
+              format: 'date-time',
+              example: '2024-01-20T10:30:00.000Z',
+              description: 'Date de dernière modification'
+            },
+            publishedAt: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true,
+              example: '2024-01-20T10:30:00.000Z',
+              description: 'Date de publication'
+            },
+            scheduledAt: {
+              type: 'string',
+              format: 'date-time',
+              nullable: true,
+              example: '2024-01-25T10:30:00.000Z',
+              description: 'Date de publication programmée'
+            }
+          }
+        },
+        NewsStats: {
+          type: 'object',
+          properties: {
+            totalArticles: {
+              type: 'number',
+              example: 5,
+              description: 'Nombre total d\'articles ce mois'
+            },
+            publishedArticles: {
+              type: 'number',
+              example: 3,
+              description: 'Nombre d\'articles publiés'
+            },
+            draftArticles: {
+              type: 'number',
+              example: 1,
+              description: 'Nombre d\'articles en brouillon'
+            },
+            scheduledArticles: {
+              type: 'number',
+              example: 1,
+              description: 'Nombre d\'articles programmés'
+            },
+            totalViews: {
+              type: 'number',
+              example: 869,
+              description: 'Nombre total de vues ce mois'
+            }
+          }
+        },
+        NewsPagination: {
+          type: 'object',
+          properties: {
+            page: {
+              type: 'number',
+              example: 1,
+              description: 'Numéro de page actuel'
+            },
+            limit: {
+              type: 'number',
+              example: 10,
+              description: 'Nombre d\'articles par page'
+            },
+            total: {
+              type: 'number',
+              example: 25,
+              description: 'Nombre total d\'articles'
+            },
+            totalPages: {
+              type: 'number',
+              example: 3,
+              description: 'Nombre total de pages'
+            }
+          }
         }
       }
     },
@@ -410,6 +567,9 @@ app.get("/ping", (req, res) => {
 // ✅ Routes principales
 const authRoutes = require("./routes/auth");
 app.use("/api/auth", authRoutes);
+
+const newsRoutes = require("./routes/news");
+app.use("/api/news", newsRoutes);
 
 const usersRoutes = require("./routes/users");
 app.use("/api/users", usersRoutes);
