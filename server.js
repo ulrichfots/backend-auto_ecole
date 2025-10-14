@@ -26,7 +26,7 @@ const swaggerOptions = {
     openapi: '3.0.0',
     info: {
       title: 'API Auto École',
-      version: '1.0.0',
+      version: '1.0.1',
       description: 'API pour la gestion d\'une auto-école avec authentification Firebase',
     },
     servers: [
