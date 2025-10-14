@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const emailService = require('../services/emailService');
 const { v4: uuidv4 } = require('uuid');
+const admin = require('../firebase');
+const { checkAuth } = require('../middlewares/authMiddleware');
 
 // Simulation d'une base de données en mémoire (remplacer par Firebase ou autre BDD)
 let registrations = [];
@@ -393,6 +395,276 @@ router.get('/:id', (req, res) => {
     console.error('Erreur lors de la récupération de l\'inscription:', error);
     res.status(500).json({
       error: 'Erreur lors de la récupération de l\'inscription',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Une erreur est survenue'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/registration/with-roles:
+ *   get:
+ *     summary: Récupère la liste des inscriptions avec les rôles des utilisateurs
+ *     description: Retourne toutes les inscriptions enregistrées avec les informations de rôle des utilisateurs associés (pour l'administration)
+ *     tags: [Inscription]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [tous, pending, confirmed, cancelled]
+ *           default: tous
+ *         description: Filtrer par statut d'inscription
+ *       - in: query
+ *         name: role
+ *         schema:
+ *           type: string
+ *           enum: [tous, admin, instructeur, eleve]
+ *           default: tous
+ *         description: Filtrer par rôle utilisateur
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 50
+ *         description: Nombre maximum d'inscriptions à retourner
+ *     responses:
+ *       200:
+ *         description: Liste des inscriptions avec rôles récupérée avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 registrations:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/RegistrationWithRole'
+ *                 total:
+ *                   type: number
+ *                   example: 25
+ *                 filteredCount:
+ *                   type: number
+ *                   example: 15
+ *       401:
+ *         description: Token manquant ou invalide
+ *       403:
+ *         description: Accès non autorisé (pas admin)
+ *       500:
+ *         description: Erreur serveur
+ */
+router.get('/with-roles', checkAuth, async (req, res) => {
+  try {
+    // Vérifier que l'utilisateur est admin
+    const userDoc = await admin.firestore().collection('users').doc(req.user.uid).get();
+    const userData = userDoc.data();
+    
+    if (!userData || userData.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès non autorisé. Seuls les administrateurs peuvent accéder à cette fonctionnalité.' });
+    }
+
+    const { status = 'tous', role = 'tous', limit = 50 } = req.query;
+    const limitNum = parseInt(limit);
+
+    // Récupérer tous les utilisateurs pour avoir leurs rôles
+    const usersSnapshot = await admin.firestore().collection('users').get();
+    const users = {};
+    
+    usersSnapshot.docs.forEach(doc => {
+      const userData = doc.data();
+      users[userData.email] = {
+        uid: doc.id,
+        role: userData.role,
+        statut: userData.statut,
+        isFirstLogin: userData.isFirstLogin,
+        createdAt: userData.createdAt
+      };
+    });
+
+    // Filtrer les inscriptions
+    let filteredRegistrations = registrations;
+
+    // Appliquer les filtres
+    if (status !== 'tous') {
+      filteredRegistrations = filteredRegistrations.filter(reg => reg.status === status);
+    }
+
+    if (role !== 'tous') {
+      filteredRegistrations = filteredRegistrations.filter(reg => {
+        const userRole = users[reg.email]?.role;
+        return userRole === role;
+      });
+    }
+
+    // Limiter le nombre de résultats
+    const limitedRegistrations = filteredRegistrations.slice(0, limitNum);
+
+    // Enrichir les inscriptions avec les données utilisateur
+    const enrichedRegistrations = limitedRegistrations.map(reg => ({
+      id: reg.id,
+      nomComplet: reg.nomComplet,
+      email: reg.email,
+      telephone: reg.telephone,
+      dateDebut: reg.dateDebut,
+      heurePreferee: reg.heurePreferee,
+      formation: reg.formation,
+      status: reg.status,
+      createdAt: reg.createdAt,
+      userRole: users[reg.email] || null
+    }));
+
+    res.status(200).json({
+      success: true,
+      registrations: enrichedRegistrations,
+      total: registrations.length,
+      filteredCount: filteredRegistrations.length,
+      filters: {
+        status,
+        role,
+        limit: limitNum
+      }
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des inscriptions avec rôles:', error);
+    res.status(500).json({
+      error: 'Erreur lors de la récupération des inscriptions',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Une erreur est survenue'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/registration/{id}/user-info:
+ *   get:
+ *     summary: Récupère les informations utilisateur pour une inscription
+ *     description: Retourne les détails de l'utilisateur associé à une inscription spécifique
+ *     tags: [Inscription]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: "reg_123456789"
+ *         description: ID de l'inscription
+ *     responses:
+ *       200:
+ *         description: Informations utilisateur récupérées avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 registration:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "reg_123456789"
+ *                     nomComplet:
+ *                       type: string
+ *                       example: "Jean Dupont"
+ *                     email:
+ *                       type: string
+ *                       example: "jean.dupont@email.com"
+ *                     formation:
+ *                       type: string
+ *                       example: "Permis B - Formation complète"
+ *                     status:
+ *                       type: string
+ *                       example: "pending"
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *                 userInfo:
+ *                   $ref: '#/components/schemas/UserInfo'
+ *                 hasAccount:
+ *                   type: boolean
+ *                   example: true
+ *                   description: "Indique si l'utilisateur a un compte dans le système"
+ *       404:
+ *         description: Inscription non trouvée
+ *       401:
+ *         description: Token manquant ou invalide
+ *       403:
+ *         description: Accès non autorisé (pas admin)
+ *       500:
+ *         description: Erreur serveur
+ */
+router.get('/:id/user-info', checkAuth, async (req, res) => {
+  try {
+    // Vérifier que l'utilisateur est admin
+    const userDoc = await admin.firestore().collection('users').doc(req.user.uid).get();
+    const userData = userDoc.data();
+    
+    if (!userData || userData.role !== 'admin') {
+      return res.status(403).json({ error: 'Accès non autorisé. Seuls les administrateurs peuvent accéder à cette fonctionnalité.' });
+    }
+
+    const { id } = req.params;
+    const registration = registrations.find(reg => reg.id === id);
+
+    if (!registration) {
+      return res.status(404).json({
+        error: 'Inscription non trouvée'
+      });
+    }
+
+    // Récupérer les informations de l'utilisateur associé
+    const usersSnapshot = await admin.firestore()
+      .collection('users')
+      .where('email', '==', registration.email)
+      .limit(1)
+      .get();
+
+    let userInfo = null;
+    let hasAccount = false;
+
+    if (!usersSnapshot.empty) {
+      const userDoc = usersSnapshot.docs[0];
+      const userData = userDoc.data();
+      hasAccount = true;
+      
+      userInfo = {
+        uid: userDoc.id,
+        role: userData.role,
+        statut: userData.statut,
+        isFirstLogin: userData.isFirstLogin,
+        theoreticalHours: userData.theoreticalHours || 0,
+        practicalHours: userData.practicalHours || 0,
+        licenseType: userData.licenseType || 'B',
+        createdAt: userData.createdAt
+      };
+    }
+
+    res.status(200).json({
+      success: true,
+      registration: {
+        id: registration.id,
+        nomComplet: registration.nomComplet,
+        email: registration.email,
+        formation: registration.formation,
+        status: registration.status,
+        createdAt: registration.createdAt
+      },
+      userInfo,
+      hasAccount
+    });
+  } catch (error) {
+    console.error('Erreur lors de la récupération des informations utilisateur:', error);
+    res.status(500).json({
+      error: 'Erreur lors de la récupération des informations utilisateur',
       message: process.env.NODE_ENV === 'development' ? error.message : 'Une erreur est survenue'
     });
   }

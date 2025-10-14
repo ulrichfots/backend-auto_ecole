@@ -26,8 +26,8 @@ const swaggerOptions = {
     openapi: '3.0.0',
     info: {
       title: 'API Auto École',
-      version: '1.1.0',
-      description: 'API complète pour la gestion d\'une auto-école avec authentification Firebase, pages de profil, support et paramètres utilisateur',
+      version: '1.2.0',
+      description: 'API complète pour la gestion d\'une auto-école avec authentification Firebase, inscriptions avec rôles utilisateur, pages de profil, support et paramètres utilisateur',
     },
     servers: [
       {
@@ -797,6 +797,45 @@ const swaggerOptions = {
                 }
               }
             }
+          }
+        },
+        // Nouveaux schémas pour l'API d'inscription améliorée
+        RegistrationWithRole: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: 'reg_123456789' },
+            nomComplet: { type: 'string', example: 'Jean Dupont' },
+            email: { type: 'string', format: 'email', example: 'jean.dupont@email.com' },
+            telephone: { type: 'string', example: '0123456789' },
+            dateDebut: { type: 'string', format: 'date', example: '2024-02-15' },
+            heurePreferee: { type: 'string', example: '14:00' },
+            formation: { type: 'string', example: 'Permis B - Formation complète' },
+            status: { type: 'string', enum: ['pending', 'confirmed', 'cancelled'], example: 'pending' },
+            createdAt: { type: 'string', format: 'date-time', example: '2024-01-15T10:30:00Z' },
+            userRole: {
+              type: 'object',
+              nullable: true,
+              properties: {
+                uid: { type: 'string', example: 'user123' },
+                role: { type: 'string', enum: ['admin', 'instructeur', 'eleve'], example: 'eleve' },
+                statut: { type: 'string', example: 'actif' },
+                isFirstLogin: { type: 'boolean', example: false },
+                createdAt: { type: 'string', format: 'date-time', example: '2024-01-15T10:30:00Z' }
+              }
+            }
+          }
+        },
+        UserInfo: {
+          type: 'object',
+          properties: {
+            uid: { type: 'string', example: 'user123' },
+            role: { type: 'string', enum: ['admin', 'instructeur', 'eleve'], example: 'eleve' },
+            statut: { type: 'string', example: 'actif' },
+            isFirstLogin: { type: 'boolean', example: false },
+            theoreticalHours: { type: 'number', example: 15 },
+            practicalHours: { type: 'number', example: 8 },
+            licenseType: { type: 'string', example: 'B' },
+            createdAt: { type: 'string', format: 'date-time', example: '2024-01-15T10:30:00Z' }
           }
         }
       }
