@@ -10,7 +10,10 @@ const schemas = {
   }),
 
   comment: Joi.object({
-    comment: Joi.string().min(1).max(500).required()
+    comment: Joi.string().min(1).max(500).required(),
+    name: Joi.string().min(2).max(50).optional(),
+    email: Joi.string().email().optional(),
+    parentId: Joi.string().optional()
   }),
 
   vote: Joi.object({
@@ -80,6 +83,38 @@ const schemas = {
     courseType: Joi.string().valid('code', 'conduite', 'autoroute', 'examen_blanc').optional(),
     startDate: Joi.string().isoDate().optional(),
     endDate: Joi.string().isoDate().optional()
+  }),
+
+  // Schéma pour les paramètres de notification
+  notificationSettings: Joi.object({
+    sessionReminders: Joi.boolean().required(),
+    newsUpdates: Joi.boolean().required()
+  }),
+
+  // Schéma pour le changement de mot de passe
+  changePassword: Joi.object({
+    currentPassword: Joi.string().min(6).required(),
+    newPassword: Joi.string().min(6).required()
+  }),
+
+  // Schéma pour l'authentification à deux facteurs
+  twoFactorSettings: Joi.object({
+    enabled: Joi.boolean().required()
+  }),
+
+  // Schéma pour la suppression de compte
+  deleteAccount: Joi.object({
+    confirmation: Joi.string().valid('SUPPRIMER').required()
+  }),
+
+  // Schéma pour le formulaire de contact
+  contactForm: Joi.object({
+    nomComplet: Joi.string().min(2).max(100).required(),
+    email: Joi.string().email().required(),
+    telephone: Joi.string().pattern(/^[0-9\s\+\-\(\)]+$/).optional(),
+    sujet: Joi.string().min(5).max(200).required(),
+    priorite: Joi.string().valid('Faible', 'Normale', 'Élevée', 'Urgente').default('Normale'),
+    message: Joi.string().min(10).max(2000).required()
   })
 };
 

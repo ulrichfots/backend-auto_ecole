@@ -26,8 +26,8 @@ const swaggerOptions = {
     openapi: '3.0.0',
     info: {
       title: 'API Auto École',
-      version: '1.0.1',
-      description: 'API pour la gestion d\'une auto-école avec authentification Firebase',
+      version: '1.1.0',
+      description: 'API complète pour la gestion d\'une auto-école avec authentification Firebase, pages de profil, support et paramètres utilisateur',
     },
     servers: [
       {
@@ -700,6 +700,104 @@ const swaggerOptions = {
               description: 'Notes sur la séance'
             }
           }
+        },
+        // Nouveaux schémas pour les pages de profil
+        UserSession: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: 'session123' },
+            title: { type: 'string', example: 'Code de la route - Signalisation' },
+            instructorName: { type: 'string', example: 'Marie Dubois' },
+            date: { type: 'string', example: 'lundi 15 janvier' },
+            time: { type: 'string', example: '14:00' },
+            duration: { type: 'string', example: '2h' },
+            type: { type: 'string', enum: ['Théorique', 'Pratique', 'En ligne'], example: 'Théorique' },
+            status: { type: 'string', enum: ['Terminé', 'À venir', 'En cours', 'Absent'], example: 'Terminé' },
+            iconType: { type: 'string', enum: ['book', 'car', 'monitor'], example: 'book' }
+          }
+        },
+        UserSettings: {
+          type: 'object',
+          properties: {
+            security: {
+              type: 'object',
+              properties: {
+                passwordLastModified: { type: 'string', format: 'date-time', example: '2024-01-15T10:30:00Z' },
+                twoFactorEnabled: { type: 'boolean', example: false }
+              }
+            },
+            notifications: {
+              type: 'object',
+              properties: {
+                sessionReminders: { type: 'boolean', example: true },
+                newsUpdates: { type: 'boolean', example: false }
+              }
+            },
+            profile: {
+              type: 'object',
+              properties: {
+                email: { type: 'string', example: 'marie.dubois@email.com' },
+                phone: { type: 'string', example: '06 12 34 56 78' },
+                address: { type: 'string', example: '123 Rue de la Paix, 75001 Paris' }
+              }
+            }
+          }
+        },
+        SupportTicket: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: 'TICKET_123456' },
+            nomComplet: { type: 'string', example: 'Marie Dubois' },
+            email: { type: 'string', format: 'email', example: 'marie.dubois@example.com' },
+            telephone: { type: 'string', example: '06 12 34 56 78' },
+            sujet: { type: 'string', example: 'Question sur mon inscription' },
+            priorite: { type: 'string', enum: ['Faible', 'Normale', 'Élevée', 'Urgente'], example: 'Normale' },
+            message: { type: 'string', example: 'Bonjour, j\'aimerais savoir...' },
+            status: { type: 'string', enum: ['nouveau', 'en_cours', 'résolu', 'fermé'], example: 'nouveau' },
+            createdAt: { type: 'string', format: 'date-time' },
+            updatedAt: { type: 'string', format: 'date-time' }
+          }
+        },
+        FAQItem: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: 'faq_001' },
+            question: { type: 'string', example: 'Comment s\'inscrire à un cours de conduite ?' },
+            reponse: { type: 'string', example: 'Pour vous inscrire, rendez-vous sur notre site web...' },
+            category: { type: 'string', enum: ['inscription', 'cours', 'paiement', 'technique'], example: 'inscription' },
+            order: { type: 'number', example: 1 }
+          }
+        },
+        ContactInfo: {
+          type: 'object',
+          properties: {
+            contact: {
+              type: 'object',
+              properties: {
+                telephone: {
+                  type: 'object',
+                  properties: {
+                    number: { type: 'string', example: '01 23 45 67 89' },
+                    hours: { type: 'string', example: 'Lundi - Vendredi : 8h00 - 18h00' }
+                  }
+                },
+                email: {
+                  type: 'object',
+                  properties: {
+                    address: { type: 'string', example: 'support@auto-ecole.fr' },
+                    responseTime: { type: 'string', example: 'Réponse sous 24h' }
+                  }
+                },
+                address: {
+                  type: 'object',
+                  properties: {
+                    location: { type: 'string', example: '123 Rue de la Paix, 75001 Paris' },
+                    hours: { type: 'string', example: 'Lun-Ven: 8h-18h, Sam: 9h-16h' }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -747,6 +845,12 @@ app.use("/api/upload", uploadRoute);
 
 const courseRoutes = require("./routes/courses");
 app.use("/api/courses", courseRoutes);
+
+const settingsRoutes = require("./routes/settings");
+app.use("/api/settings", settingsRoutes);
+
+const supportRoutes = require("./routes/support");
+app.use("/api/support", supportRoutes);
 
 const dashboardRoutes = require("./routes/dashboard");
 app.use("/api/dashboard", dashboardRoutes);

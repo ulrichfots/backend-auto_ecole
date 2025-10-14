@@ -1086,4 +1086,127 @@ router.post('/export/excel', checkAuth, async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /api/sessions/me:
+ *   get:
+ *     summary: Récupérer les séances de l'utilisateur connecté
+ *     description: Retourne les séances de l'utilisateur connecté avec format adapté pour la page "Mes séances"
+ *     tags: [Sessions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           default: 20
+ *         description: Nombre maximum de séances à retourner
+ *     responses:
+ *       200:
+ *         description: Séances de l'utilisateur récupérées avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sessions:
+ *                   type: array
+ *                   items:
+ *                     $ref: '#/components/schemas/UserSession'
+ *                 totalCount:
+ *                   type: number
+ *                   example: 4
+ *       401:
+ *         description: Token manquant ou invalide
+ *       500:
+ *         description: Erreur serveur
+ */
+router.get('/me', checkAuth, async (req, res) => {
+  try {
+    const { limit = 20 } = req.query;
+    const userId = req.user.uid;
+    const limitNum = parseInt(limit);
+
+    // Récupérer les séances de l'utilisateur
+    const sessionsSnapshot = await admin.firestore()
+      .collection('sessions')
+      .where('studentId', '==', userId)
+      .orderBy('scheduledDate', 'desc')
+      .limit(limitNum)
+      .get();
+
+    const sessions = await Promise.all(sessionsSnapshot.docs.map(async (doc) => {
+      const sessionData = doc.data();
+      
+      // Récupérer les données de l'instructeur
+      const instructorDoc = await admin.firestore().collection('users').doc(sessionData.instructorId).get();
+      const instructorData = instructorDoc.exists ? instructorDoc.data() : null;
+
+      // Déterminer le type d'icône
+      let iconType = 'book'; // défaut
+      let typeLabel = 'Théorique';
+      
+      switch (sessionData.courseType) {
+        case 'conduite':
+          iconType = 'car';
+          typeLabel = 'Pratique';
+          break;
+        case 'code':
+          iconType = 'book';
+          typeLabel = 'Théorique';
+          break;
+        case 'examen_blanc':
+          iconType = 'monitor';
+          typeLabel = 'En ligne';
+          break;
+        default:
+          iconType = 'book';
+          typeLabel = 'Théorique';
+      }
+
+      // Déterminer le statut
+      let statusLabel = 'À venir';
+      const now = new Date();
+      const sessionDate = sessionData.scheduledDate?.toDate?.() || new Date(sessionData.scheduledDate);
+      
+      if (sessionData.status === 'présent' && sessionDate < now) {
+        statusLabel = 'Terminé';
+      } else if (sessionData.status === 'absent') {
+        statusLabel = 'Absent';
+      } else if (sessionDate >= now) {
+        statusLabel = 'À venir';
+      }
+
+      // Formater la date en français
+      const dateOptions = { 
+        weekday: 'long', 
+        day: 'numeric', 
+        month: 'long' 
+      };
+      const formattedDate = sessionDate.toLocaleDateString('fr-FR', dateOptions);
+
+      return {
+        id: doc.id,
+        title: sessionData.courseTitle,
+        instructorName: instructorData?.nom || 'Instructeur inconnu',
+        date: formattedDate,
+        time: sessionData.scheduledTime,
+        duration: `${sessionData.duration}h`,
+        type: typeLabel,
+        status: statusLabel,
+        iconType: iconType
+      };
+    }));
+
+    res.status(200).json({
+      sessions,
+      totalCount: sessions.length
+    });
+  } catch (error) {
+    console.error('Erreur récupération séances utilisateur:', error);
+    res.status(500).json({ error: 'Erreur lors de la récupération des séances' });
+  }
+});
+
 module.exports = router;
