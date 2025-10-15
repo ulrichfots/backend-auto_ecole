@@ -65,6 +65,11 @@ let registrations = [];
  *           default: eleve
  *           example: "eleve"
  *           description: "Rôle de l'utilisateur (par défaut: eleve)"
+ *         password:
+ *           type: string
+ *           minLength: 6
+ *           example: "motdepasse123"
+ *           description: "Mot de passe pour le compte utilisateur (requis pour création de compte)"
  *     
  *     RegistrationResponse:
  *       type: object
@@ -109,7 +114,11 @@ let registrations = [];
  *             uid:
  *               type: string
  *               example: "user123"
- *               description: "ID unique de l'utilisateur créé"
+ *               description: "ID unique de l'utilisateur créé dans Firestore"
+ *             firebaseUid:
+ *               type: string
+ *               example: "firebase_user_456"
+ *               description: "ID unique de l'utilisateur dans Firebase Auth"
  *             role:
  *               type: string
  *               enum: [admin, instructeur, eleve]
@@ -123,6 +132,10 @@ let registrations = [];
  *               type: boolean
  *               example: true
  *               description: "Indique si c'est la première connexion"
+ *             emailVerified:
+ *               type: boolean
+ *               example: false
+ *               description: "Indique si l'email est vérifié dans Firebase"
  */
 
 /**
@@ -148,6 +161,7 @@ let registrations = [];
  *             heurePreferee: "14:00"
  *             formation: "Permis B - Formation complète"
  *             role: "eleve"
+ *             password: "motdepasse123"
  *     responses:
  *       201:
  *         description: Inscription enregistrée avec succès
@@ -169,9 +183,11 @@ let registrations = [];
  *               userAccount:
  *                 created: true
  *                 uid: "user123"
+ *                 firebaseUid: "firebase_user_456"
  *                 role: "eleve"
  *                 statut: "actif"
  *                 isFirstLogin: true
+ *                 emailVerified: false
  *       400:
  *         description: Données d'inscription invalides
  *         content:
@@ -200,7 +216,9 @@ router.post('/', async (req, res) => {
       dateNaissance,
       dateDebut,
       heurePreferee,
-      formation
+      formation,
+      role,
+      password
     } = req.body;
 
     // Validation des données requises
@@ -211,6 +229,14 @@ router.post('/', async (req, res) => {
       return res.status(400).json({
         error: 'Données d\'inscription invalides',
         details: missingFields.map(field => `Le champ '${field}' est requis`)
+      });
+    }
+
+    // Validation du mot de passe si fourni
+    if (password && password.length < 6) {
+      return res.status(400).json({
+        error: 'Mot de passe invalide',
+        details: 'Le mot de passe doit contenir au moins 6 caractères'
       });
     }
 
@@ -238,7 +264,7 @@ router.post('/', async (req, res) => {
       formation,
       createdAt: new Date().toISOString(),
       status: 'pending', // pending, confirmed, cancelled
-      role: req.body.role || 'eleve' // Rôle par défaut: eleve
+      role: role || 'eleve' // Rôle par défaut: eleve
     };
 
     // Sauvegarde de l'inscription (simulation - remplacer par Firebase)
@@ -248,6 +274,7 @@ router.post('/', async (req, res) => {
     // Créer un compte utilisateur avec le rôle spécifié
     let userCreated = false;
     let userData = null;
+    let firebaseUser = null;
     
     try {
       // Vérifier si l'utilisateur existe déjà
@@ -257,12 +284,27 @@ router.post('/', async (req, res) => {
         .limit(1)
         .get();
 
-      if (existingUserQuery.empty) {
-        // Créer un nouvel utilisateur
+      if (existingUserQuery.empty && password) {
+        // Créer un utilisateur Firebase Auth avec mot de passe
+        try {
+          firebaseUser = await admin.auth().createUser({
+            email: email,
+            password: password,
+            displayName: nomComplet,
+            emailVerified: false
+          });
+          console.log('Utilisateur Firebase Auth créé:', firebaseUser.uid);
+        } catch (authError) {
+          console.error('Erreur création utilisateur Firebase Auth:', authError);
+          // Continuer sans créer l'utilisateur Auth si échec
+        }
+
+        // Créer le document utilisateur dans Firestore
         const newUserRef = admin.firestore().collection('users').doc();
         
         userData = {
           uid: newUserRef.id,
+          firebaseUid: firebaseUser ? firebaseUser.uid : null,
           email: email,
           nomComplet: nomComplet,
           telephone: telephone,
@@ -283,6 +325,8 @@ router.post('/', async (req, res) => {
         await newUserRef.set(userData);
         userCreated = true;
         console.log('Compte utilisateur créé avec le rôle:', registrationData.role);
+      } else if (existingUserQuery.empty && !password) {
+        console.log('Pas de mot de passe fourni - inscription sans création de compte');
       } else {
         console.log('Utilisateur existe déjà avec cet email');
         const existingUser = existingUserQuery.docs[0];
@@ -337,9 +381,11 @@ router.post('/', async (req, res) => {
       userAccount: {
         created: userCreated,
         uid: userData?.uid || null,
+        firebaseUid: firebaseUser?.uid || null,
         role: userData?.role || null,
         statut: userData?.statut || null,
-        isFirstLogin: userData?.isFirstLogin || false
+        isFirstLogin: userData?.isFirstLogin || false,
+        emailVerified: firebaseUser?.emailVerified || false
       }
     });
 
@@ -807,6 +853,11 @@ router.get('/:id/user-info', checkAuth, async (req, res) => {
  *                 enum: [admin, instructeur, eleve]
  *                 example: "instructeur"
  *                 description: "Rôle de l'utilisateur à créer"
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *                 example: "motdepasse123"
+ *                 description: "Mot de passe pour le compte utilisateur"
  *               formation:
  *                 type: string
  *                 example: "Permis B - Formation complète"
@@ -822,6 +873,7 @@ router.get('/:id/user-info', checkAuth, async (req, res) => {
  *             adresse: "456 Avenue des Instructeurs, 75002 Paris"
  *             dateNaissance: "1985-03-20"
  *             role: "instructeur"
+ *             password: "motdepasse123"
  *             formation: "Formation Instructeur"
  *             licenseType: "B"
  *     responses:
@@ -890,18 +942,27 @@ router.post('/create-user', checkAuth, async (req, res) => {
       adresse,
       dateNaissance,
       role,
+      password,
       formation,
       licenseType = 'B'
     } = req.body;
 
     // Validation des données requises
-    const requiredFields = ['nomComplet', 'email', 'role'];
+    const requiredFields = ['nomComplet', 'email', 'role', 'password'];
     const missingFields = requiredFields.filter(field => !req.body[field]);
     
     if (missingFields.length > 0) {
       return res.status(400).json({
         error: 'Données invalides',
         details: missingFields.map(field => `Le champ '${field}' est requis`)
+      });
+    }
+
+    // Validation du mot de passe
+    if (password.length < 6) {
+      return res.status(400).json({
+        error: 'Mot de passe invalide',
+        details: 'Le mot de passe doit contenir au moins 6 caractères'
       });
     }
 
@@ -936,11 +997,30 @@ router.post('/create-user', checkAuth, async (req, res) => {
       });
     }
 
-    // Créer le nouvel utilisateur
+    // Créer un utilisateur Firebase Auth avec mot de passe
+    let firebaseUser = null;
+    try {
+      firebaseUser = await admin.auth().createUser({
+        email: email,
+        password: password,
+        displayName: nomComplet,
+        emailVerified: false
+      });
+      console.log('Utilisateur Firebase Auth créé:', firebaseUser.uid);
+    } catch (authError) {
+      console.error('Erreur création utilisateur Firebase Auth:', authError);
+      return res.status(400).json({
+        error: 'Erreur lors de la création du compte Firebase',
+        details: authError.message
+      });
+    }
+
+    // Créer le document utilisateur dans Firestore
     const newUserRef = admin.firestore().collection('users').doc();
     
     const newUserData = {
       uid: newUserRef.id,
+      firebaseUid: firebaseUser.uid,
       email: email,
       nomComplet: nomComplet,
       telephone: telephone || '',
@@ -965,11 +1045,13 @@ router.post('/create-user', checkAuth, async (req, res) => {
       message: 'Compte utilisateur créé avec succès',
       user: {
         uid: newUserRef.id,
+        firebaseUid: firebaseUser.uid,
         email: newUserData.email,
         nomComplet: newUserData.nomComplet,
         role: newUserData.role,
         statut: newUserData.statut,
         isFirstLogin: newUserData.isFirstLogin,
+        emailVerified: firebaseUser.emailVerified,
         createdAt: newUserData.createdAt
       }
     });

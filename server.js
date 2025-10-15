@@ -26,8 +26,8 @@ const swaggerOptions = {
     openapi: '3.0.0',
     info: {
       title: 'API Auto École',
-      version: '1.3.0',
-      description: 'API complète pour la gestion d\'une auto-école avec authentification Firebase, inscriptions avec création automatique de comptes utilisateur, gestion des rôles, pages de profil, support et paramètres utilisateur',
+      version: '1.4.0',
+      description: 'API complète pour la gestion d\'une auto-école avec authentification Firebase, inscriptions avec création automatique de comptes utilisateur avec mots de passe, gestion des rôles, pages de profil, support et paramètres utilisateur',
     },
     servers: [
       {
