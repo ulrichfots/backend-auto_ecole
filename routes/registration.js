@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const emailService = require('../services/emailService');
 const { v4: uuidv4 } = require('uuid');
-const admin = require('../firebase');
+const { admin } = require('../firebase');
 const { checkAuth } = require('../middlewares/authMiddleware');
 
 // Simulation d'une base de données en mémoire (remplacer par Firebase ou autre BDD)
@@ -408,23 +408,9 @@ router.post('/', async (req, res) => {
       admin: { success: false }
     };
 
-    try {
-      // Email de confirmation à l'étudiant
-      const studentEmailResult = await emailService.sendConfirmationToStudent(registrationData);
-      emailsSent.student = studentEmailResult;
-    } catch (emailError) {
-      console.error('Erreur envoi email étudiant:', emailError.message);
-      emailsSent.student = { success: false, error: emailError.message };
-    }
-
-    try {
-      // Email de notification à l'admin
-      const adminEmailResult = await emailService.sendNotificationToAdmin(registrationData);
-      emailsSent.admin = adminEmailResult;
-    } catch (emailError) {
-      console.error('Erreur envoi email admin:', emailError.message);
-      emailsSent.admin = { success: false, error: emailError.message };
-    }
+    // Emails désactivés temporairement (problème de timeout SMTP)
+    emailsSent.student = { success: false, error: 'Emails désactivés temporairement' };
+    emailsSent.admin = { success: false, error: 'Emails désactivés temporairement' };
 
     // Réponse de succès
     res.status(201).json({
