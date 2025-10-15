@@ -910,6 +910,55 @@ app.get("/", (req, res) => {
   res.send("API Auto École fonctionne !");
 });
 
+// ✅ Validation de mot de passe
+app.post("/api/validate-password", (req, res) => {
+  try {
+    const { password } = req.body;
+    
+    if (!password) {
+      return res.status(400).json({
+        error: 'Mot de passe requis'
+      });
+    }
+
+    const passwordErrors = [];
+    const requirements = {
+      minLength: 6,
+      uppercase: true,
+      specialChar: true
+    };
+    
+    if (password.length < 6) {
+      passwordErrors.push('au moins 6 caractères');
+    }
+    
+    if (!/[A-Z]/.test(password)) {
+      passwordErrors.push('au moins une majuscule');
+    }
+    
+    if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+      passwordErrors.push('au moins un caractère spécial (!@#$%^&*)');
+    }
+    
+    const isValid = passwordErrors.length === 0;
+    
+    res.json({
+      success: isValid,
+      valid: isValid,
+      errors: passwordErrors,
+      requirements,
+      examples: ['Password123!', 'MotDePasse456@', 'SecurePass789#'],
+      message: isValid ? 'Mot de passe valide' : `Le mot de passe doit contenir : ${passwordErrors.join(', ')}`
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // ✅ Health check endpoint pour keep-alive
 app.get("/health", (req, res) => {
   res.status(200).json({ 

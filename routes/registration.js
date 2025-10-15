@@ -68,8 +68,9 @@ let registrations = [];
  *         password:
  *           type: string
  *           minLength: 6
- *           example: "motdepasse123"
- *           description: "Mot de passe pour le compte utilisateur (requis pour création de compte)"
+ *           example: "Password123!"
+ *           description: "Mot de passe (minimum 6 caractères, 1 majuscule, 1 caractère spécial)"
+ *           pattern: "^(?=.*[A-Z])(?=.*[!@#$%^&*()_+\\-=\\[\\]{};':\"\\\\|,.<>\\/?]).{6,}$"
  *     
  *     RegistrationResponse:
  *       type: object
@@ -1025,12 +1026,34 @@ router.post('/create-user', checkAuth, async (req, res) => {
       });
     }
 
-    // Validation du mot de passe
-    if (password.length < 6) {
-      return res.status(400).json({
-        error: 'Mot de passe invalide',
-        details: 'Le mot de passe doit contenir au moins 6 caractères'
-      });
+    // Validation du mot de passe Firebase Auth
+    if (password) {
+      const passwordErrors = [];
+      
+      if (password.length < 6) {
+        passwordErrors.push('au moins 6 caractères');
+      }
+      
+      if (!/[A-Z]/.test(password)) {
+        passwordErrors.push('au moins une majuscule');
+      }
+      
+      if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+        passwordErrors.push('au moins un caractère spécial (!@#$%^&*)');
+      }
+      
+      if (passwordErrors.length > 0) {
+        return res.status(400).json({
+          error: 'Mot de passe invalide',
+          details: `Le mot de passe doit contenir : ${passwordErrors.join(', ')}`,
+          requirements: {
+            minLength: 6,
+            uppercase: true,
+            specialChar: true,
+            examples: ['Password123!', 'MotDePasse456@', 'SecurePass789#']
+          }
+        });
+      }
     }
 
     // Validation de l'email
