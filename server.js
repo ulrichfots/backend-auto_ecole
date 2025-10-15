@@ -8,13 +8,25 @@ const app = express();
 
 // ✅ Configuration CORS avancée
 app.use(cors({
-  origin: [
-    'http://localhost:52366', // Flutter Web local
-    'http://localhost:3000',  // Front React local
-    'https://ton-frontend.onrender.com', // Front déployé
-    'http://localhost:5000', // Swagger UI local
-    'https://backend-auto-ecole-f14d.onrender.com' // Swagger UI déployé
-  ],
+  origin: function (origin, callback) {
+    // Autoriser les requêtes sans origine (ex: Postman, Swagger UI)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:52366', // Flutter Web local
+      'http://localhost:3000',  // Front React local
+      'https://ton-frontend.onrender.com', // Front déployé
+      'http://localhost:5000', // Swagger UI local
+      'https://backend-auto-ecole-f14d.onrender.com' // Swagger UI déployé
+    ];
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('CORS blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
   credentials: true,
@@ -24,6 +36,27 @@ app.use(express.json());
 
 // ✅ Middleware pour gérer les requêtes OPTIONS (preflight CORS)
 app.options('*', cors());
+
+// ✅ Middleware de debug CORS
+app.use((req, res, next) => {
+  console.log('CORS Request:', {
+    method: req.method,
+    url: req.url,
+    origin: req.headers.origin,
+    userAgent: req.headers['user-agent']
+  });
+  next();
+});
+
+// ✅ Endpoint de test CORS
+app.get('/api/test-cors', (req, res) => {
+  res.json({
+    success: true,
+    message: 'CORS fonctionne correctement',
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString()
+  });
+});
 
 // ✅ Middleware CORS spécifique pour Swagger UI
 app.use('/api-docs', cors({
@@ -43,6 +76,10 @@ const swaggerOptions = {
       description: 'API complète pour la gestion d\'une auto-école avec authentification Firebase, inscriptions avec création automatique de comptes utilisateur avec mots de passe, gestion des rôles, pages de profil, support et paramètres utilisateur',
     },
     servers: [
+      {
+        url: `https://backend-auto-ecole-f14d.onrender.com`,
+        description: 'Serveur de production',
+      },
       {
         url: `http://localhost:${process.env.PORT || 5000}`,
         description: 'Serveur de développement',
