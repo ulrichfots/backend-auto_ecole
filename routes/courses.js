@@ -1,5 +1,5 @@
 const express = require("express");
-const admin = require("../firebase");
+const { admin } = require("../firebase");
 const { validate, schemas } = require('../middlewares/validationMiddleware');
 const { checkAuth } = require('../middlewares/authMiddleware');
 
