@@ -507,6 +507,82 @@ function generateRecommendations(envCheck, firebaseConfig, authTest, firestoreTe
  *                   type: string
  *                   example: "Erreur lors de la création du compte Firebase"
  */
+
+// ✅ Endpoint de diagnostic détaillé Firebase
+app.get('/api/firebase-status', (req, res) => {
+  try {
+    const envStatus = {
+      FIREBASE_SERVICE_ACCOUNT: !!process.env.FIREBASE_SERVICE_ACCOUNT,
+      FIREBASE_STORAGE_BUCKET: process.env.FIREBASE_STORAGE_BUCKET || 'non défini',
+      NODE_ENV: process.env.NODE_ENV || 'non défini'
+    };
+
+    // Analyser le JSON du service account si disponible
+    let serviceAccountInfo = null;
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+      try {
+        const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+        serviceAccountInfo = {
+          project_id: serviceAccount.project_id,
+          storage_bucket: serviceAccount.storage_bucket,
+          client_email: serviceAccount.client_email
+        };
+      } catch (parseError) {
+        serviceAccountInfo = { error: 'Erreur parsing JSON: ' + parseError.message };
+      }
+    }
+
+    let firebaseStatus = 'Non initialisé';
+    let firebaseConfig = null;
+    let error = null;
+
+    try {
+      const admin = require('./firebase').admin;
+      const app = admin.app();
+      firebaseStatus = 'Initialisé';
+      firebaseConfig = {
+        projectId: app.options.projectId,
+        storageBucket: app.options.storageBucket,
+        credential: app.options.credential ? 'Configuré' : 'Manquant'
+      };
+    } catch (err) {
+      firebaseStatus = 'Erreur';
+      error = err.message;
+    }
+
+    // Recommandations basées sur l'analyse
+    const recommendations = [];
+    
+    if (!envStatus.FIREBASE_SERVICE_ACCOUNT) {
+      recommendations.push('Ajouter FIREBASE_SERVICE_ACCOUNT sur Render.com');
+    }
+    
+    if (envStatus.FIREBASE_STORAGE_BUCKET === 'your-project-id.appspot.com') {
+      recommendations.push('FIREBASE_STORAGE_BUCKET a une valeur placeholder - corriger avec la vraie valeur');
+    }
+    
+    if (serviceAccountInfo && serviceAccountInfo.storage_bucket) {
+      recommendations.push(`Valeur suggérée pour FIREBASE_STORAGE_BUCKET: ${serviceAccountInfo.storage_bucket}`);
+    }
+
+    res.json({
+      success: true,
+      message: 'Diagnostic Firebase détaillé',
+      environment: envStatus,
+      serviceAccountInfo,
+      firebase: firebaseStatus,
+      firebaseConfig,
+      error: error,
+      recommendations
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 app.post('/api/registration-simple', async (req, res) => {
   try {
     const {
