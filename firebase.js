@@ -12,10 +12,18 @@ if (!admin.apps.length) {
       serviceAccount = require('./serviceAccountKey.json');
     }
 
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || "app-auto-ecole.appspot.com",
-    });
+    // Initialisation Firebase sans storage bucket pour éviter les erreurs
+    const firebaseConfig = {
+      credential: admin.credential.cert(serviceAccount)
+    };
+    
+    // Ajouter storageBucket seulement si la variable est correctement définie
+    if (process.env.FIREBASE_STORAGE_BUCKET && 
+        process.env.FIREBASE_STORAGE_BUCKET !== 'your-project-id.appspot.com') {
+      firebaseConfig.storageBucket = process.env.FIREBASE_STORAGE_BUCKET;
+    }
+
+    admin.initializeApp(firebaseConfig);
 
     console.log('✅ Firebase Admin initialisé avec succès');
   } catch (error) {
