@@ -11,14 +11,27 @@ app.use(cors({
   origin: [
     'http://localhost:52366', // Flutter Web local
     'http://localhost:3000',  // Front React local
-    'https://ton-frontend.onrender.com' // Front déployé
+    'https://ton-frontend.onrender.com', // Front déployé
+    'http://localhost:5000', // Swagger UI local
+    'https://backend-auto-ecole-f14d.onrender.com' // Swagger UI déployé
   ],
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
   credentials: true,
 }));
 
 app.use(express.json());
+
+// ✅ Middleware pour gérer les requêtes OPTIONS (preflight CORS)
+app.options('*', cors());
+
+// ✅ Middleware CORS spécifique pour Swagger UI
+app.use('/api-docs', cors({
+  origin: true, // Autoriser toutes les origines pour Swagger UI
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+  credentials: true,
+}));
 
 // ✅ Configuration Swagger
 const swaggerOptions = {

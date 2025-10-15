@@ -104,6 +104,34 @@ let registrations = [];
  *                 messageId:
  *                   type: string
  *                   example: "email_456"
+ *         registration:
+ *           type: object
+ *           properties:
+ *             id:
+ *               type: string
+ *               example: "reg_123456789"
+ *             nomComplet:
+ *               type: string
+ *               example: "Jean Dupont"
+ *             email:
+ *               type: string
+ *               example: "jean.dupont@email.com"
+ *             dateDebut:
+ *               type: string
+ *               example: "2024-02-15"
+ *             heurePreferee:
+ *               type: string
+ *               example: "14:00"
+ *             formation:
+ *               type: string
+ *               example: "Permis B - Formation complète"
+ *             role:
+ *               type: string
+ *               example: "eleve"
+ *             createdAt:
+ *               type: string
+ *               format: date-time
+ *               example: "2024-01-15T10:30:00Z"
  *         userAccount:
  *           type: object
  *           properties:
@@ -180,6 +208,15 @@ let registrations = [];
  *                 admin:
  *                   success: true
  *                   messageId: "email_456"
+ *               registration:
+ *                 id: "reg_123456789"
+ *                 nomComplet: "Jean Dupont"
+ *                 email: "jean.dupont@email.com"
+ *                 dateDebut: "2024-02-15"
+ *                 heurePreferee: "14:00"
+ *                 formation: "Permis B - Formation complète"
+ *                 role: "eleve"
+ *                 createdAt: "2024-01-15T10:30:00Z"
  *               userAccount:
  *                 created: true
  *                 uid: "user123"
@@ -189,14 +226,22 @@ let registrations = [];
  *                 isFirstLogin: true
  *                 emailVerified: false
  *       400:
- *         description: Données d'inscription invalides
+ *         description: Données d'inscription invalides ou email déjà utilisé
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
- *             example:
- *               error: "Données d'inscription invalides"
- *               details: ["Le champ 'nomComplet' est requis"]
+ *             examples:
+ *               validation_error:
+ *                 summary: Erreur de validation
+ *                 value:
+ *                   error: "Données d'inscription invalides"
+ *                   details: ["Le champ 'nomComplet' est requis"]
+ *               email_exists:
+ *                 summary: Email déjà utilisé
+ *                 value:
+ *                   error: "Email déjà utilisé"
+ *                   details: "Un compte avec cette adresse email existe déjà dans le système"
  *       500:
  *         description: Erreur serveur
  *         content:
@@ -246,6 +291,26 @@ router.post('/', async (req, res) => {
       return res.status(400).json({
         error: 'Format d\'email invalide'
       });
+    }
+
+    // Vérifier si l'email existe déjà dans Firebase Auth
+    try {
+      const existingAuthUser = await admin.auth().getUserByEmail(email);
+      if (existingAuthUser) {
+        return res.status(400).json({
+          error: 'Email déjà utilisé',
+          details: 'Un compte avec cette adresse email existe déjà dans le système'
+        });
+      }
+    } catch (authError) {
+      // Si l'utilisateur n'existe pas, l'erreur est normale, on continue
+      if (authError.code !== 'auth/user-not-found') {
+        console.error('Erreur lors de la vérification de l\'email:', authError);
+        return res.status(500).json({
+          error: 'Erreur lors de la vérification de l\'email',
+          details: 'Impossible de vérifier si l\'email existe déjà'
+        });
+      }
     }
 
     // Génération d'un ID unique pour l'inscription
@@ -915,7 +980,22 @@ router.get('/:id/user-info', checkAuth, async (req, res) => {
  *                       type: string
  *                       format: date-time
  *       400:
- *         description: Données invalides ou utilisateur existe déjà
+ *         description: Données invalides ou email déjà utilisé
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *             examples:
+ *               validation_error:
+ *                 summary: Erreur de validation
+ *                 value:
+ *                   error: "Données invalides"
+ *                   details: ["Le champ 'nomComplet' est requis"]
+ *               email_exists:
+ *                 summary: Email déjà utilisé
+ *                 value:
+ *                   error: "Email déjà utilisé"
+ *                   details: "Un compte avec cette adresse email existe déjà dans le système"
  *       401:
  *         description: Token manquant ou invalide
  *       403:
@@ -974,6 +1054,26 @@ router.post('/create-user', checkAuth, async (req, res) => {
       });
     }
 
+    // Vérifier si l'email existe déjà dans Firebase Auth
+    try {
+      const existingAuthUser = await admin.auth().getUserByEmail(email);
+      if (existingAuthUser) {
+        return res.status(400).json({
+          error: 'Email déjà utilisé',
+          details: 'Un compte avec cette adresse email existe déjà dans le système'
+        });
+      }
+    } catch (authError) {
+      // Si l'utilisateur n'existe pas, l'erreur est normale, on continue
+      if (authError.code !== 'auth/user-not-found') {
+        console.error('Erreur lors de la vérification de l\'email:', authError);
+        return res.status(500).json({
+          error: 'Erreur lors de la vérification de l\'email',
+          details: 'Impossible de vérifier si l\'email existe déjà'
+        });
+      }
+    }
+
     // Validation du rôle
     const validRoles = ['admin', 'instructeur', 'eleve'];
     if (!validRoles.includes(role)) {
@@ -983,19 +1083,7 @@ router.post('/create-user', checkAuth, async (req, res) => {
       });
     }
 
-    // Vérifier si l'utilisateur existe déjà
-    const existingUserQuery = await admin.firestore()
-      .collection('users')
-      .where('email', '==', email)
-      .limit(1)
-      .get();
-
-    if (!existingUserQuery.empty) {
-      return res.status(400).json({
-        error: 'Utilisateur existe déjà',
-        details: 'Un utilisateur avec cet email existe déjà dans le système'
-      });
-    }
+    // Note: La vérification d'email est déjà faite dans Firebase Auth ci-dessus
 
     // Créer un utilisateur Firebase Auth avec mot de passe
     let firebaseUser = null;
