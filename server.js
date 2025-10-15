@@ -58,6 +58,263 @@ app.get('/api/test-cors', (req, res) => {
   });
 });
 
+// ✅ Endpoint de diagnostic Firebase complet
+app.get('/api/diagnostic-firebase', async (req, res) => {
+  try {
+    const admin = require('./firebase').admin;
+    
+    // 1. Vérifier les variables d'environnement
+    const envCheck = {
+      FIREBASE_SERVICE_ACCOUNT: !!process.env.FIREBASE_SERVICE_ACCOUNT,
+      FIREBASE_STORAGE_BUCKET: !!process.env.FIREBASE_STORAGE_BUCKET,
+      NODE_ENV: process.env.NODE_ENV || 'non défini'
+    };
+
+    // 2. Vérifier la configuration Firebase Admin
+    let firebaseConfig = null;
+    try {
+      const app = admin.app();
+      firebaseConfig = {
+        projectId: app.options.projectId,
+        storageBucket: app.options.storageBucket,
+        credential: app.options.credential ? 'Configuré' : 'Manquant'
+      };
+    } catch (configError) {
+      firebaseConfig = { error: configError.message };
+    }
+
+    // 3. Test de connexion Firebase Auth
+    let authTest = null;
+    try {
+      const testEmail = 'test@example.com';
+      await admin.auth().getUserByEmail(testEmail);
+      authTest = { success: true, message: 'Email trouvé (normal)' };
+    } catch (authError) {
+      if (authError.code === 'auth/user-not-found') {
+        authTest = { success: true, message: 'Email non trouvé (normal)', code: authError.code };
+      } else {
+        authTest = { success: false, error: authError.message, code: authError.code };
+      }
+    }
+
+    // 4. Test de connexion Firestore
+    let firestoreTest = null;
+    try {
+      const testDoc = await admin.firestore().collection('_test').doc('connection').get();
+      firestoreTest = { success: true, message: 'Connexion Firestore OK' };
+    } catch (firestoreError) {
+      firestoreTest = { success: false, error: firestoreError.message, code: firestoreError.code };
+    }
+
+    // 5. Test de création d'utilisateur (simulation)
+    let createUserTest = null;
+    try {
+      // On ne crée pas vraiment l'utilisateur, on teste juste les permissions
+      const testUid = 'test-permissions-' + Date.now();
+      // Cette opération va échouer mais nous dira si les permissions sont OK
+      await admin.auth().createUser({
+        uid: testUid,
+        email: 'test-permissions@example.com',
+        password: 'test123456'
+      });
+      createUserTest = { success: true, message: 'Permissions de création OK' };
+    } catch (createError) {
+      if (createError.code === 'auth/email-already-exists' || createError.code === 'auth/invalid-email') {
+        createUserTest = { success: true, message: 'Permissions OK (erreur attendue)', code: createError.code };
+      } else {
+        createUserTest = { success: false, error: createError.message, code: createError.code };
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Diagnostic Firebase complet',
+      timestamp: new Date().toISOString(),
+      environment: envCheck,
+      firebaseConfig,
+      authTest,
+      firestoreTest,
+      createUserTest,
+      recommendations: generateRecommendations(envCheck, firebaseConfig, authTest, firestoreTest, createUserTest)
+    });
+
+  } catch (error) {
+    console.error('Erreur diagnostic Firebase:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Erreur diagnostic Firebase',
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Fonction pour générer des recommandations
+function generateRecommendations(envCheck, firebaseConfig, authTest, firestoreTest, createUserTest) {
+  const recommendations = [];
+
+  if (!envCheck.FIREBASE_SERVICE_ACCOUNT) {
+    recommendations.push({
+      priority: 'HIGH',
+      issue: 'Variable FIREBASE_SERVICE_ACCOUNT manquante',
+      solution: 'Ajouter la variable d\'environnement FIREBASE_SERVICE_ACCOUNT avec le JSON du service account'
+    });
+  }
+
+  if (!envCheck.FIREBASE_STORAGE_BUCKET) {
+    recommendations.push({
+      priority: 'MEDIUM',
+      issue: 'Variable FIREBASE_STORAGE_BUCKET manquante',
+      solution: 'Ajouter la variable d\'environnement FIREBASE_STORAGE_BUCKET (ex: your-project.appspot.com)'
+    });
+  }
+
+  if (firebaseConfig.error) {
+    recommendations.push({
+      priority: 'HIGH',
+      issue: 'Configuration Firebase incorrecte',
+      solution: 'Vérifier le format JSON de FIREBASE_SERVICE_ACCOUNT et les permissions du service account'
+    });
+  }
+
+  if (!authTest.success) {
+    recommendations.push({
+      priority: 'HIGH',
+      issue: 'Firebase Auth inaccessible',
+      solution: 'Vérifier les permissions du service account (Firebase Authentication Admin)'
+    });
+  }
+
+  if (!firestoreTest.success) {
+    recommendations.push({
+      priority: 'HIGH',
+      issue: 'Firestore inaccessible',
+      solution: 'Vérifier les permissions du service account (Cloud Firestore)'
+    });
+  }
+
+  if (!createUserTest.success) {
+    recommendations.push({
+      priority: 'HIGH',
+      issue: 'Permissions de création d\'utilisateur insuffisantes',
+      solution: 'Vérifier que le service account a le rôle "Firebase Authentication Admin"'
+    });
+  }
+
+  return recommendations;
+}
+
+// ✅ Endpoint d'inscription simplifié pour test
+app.post('/api/registration-simple', async (req, res) => {
+  try {
+    const {
+      nomComplet,
+      email,
+      telephone,
+      adresse,
+      dateNaissance,
+      dateDebut,
+      heurePreferee,
+      formation,
+      role = 'eleve',
+      password
+    } = req.body;
+
+    // Validation basique
+    if (!nomComplet || !email || !password) {
+      return res.status(400).json({
+        error: 'Données manquantes',
+        details: 'nomComplet, email et password sont requis'
+      });
+    }
+
+    // Validation email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        error: 'Format d\'email invalide'
+      });
+    }
+
+    // Validation mot de passe
+    if (password.length < 6) {
+      return res.status(400).json({
+        error: 'Mot de passe trop court',
+        details: 'Le mot de passe doit contenir au moins 6 caractères'
+      });
+    }
+
+    const admin = require('./firebase').admin;
+    const { v4: uuidv4 } = require('uuid');
+
+    // Créer l'utilisateur Firebase Auth
+    let firebaseUser;
+    try {
+      firebaseUser = await admin.auth().createUser({
+        email: email,
+        password: password,
+        displayName: nomComplet,
+        emailVerified: false
+      });
+      console.log('Utilisateur Firebase Auth créé:', firebaseUser.uid);
+    } catch (authError) {
+      console.error('Erreur création utilisateur Firebase Auth:', authError);
+      return res.status(400).json({
+        error: 'Erreur création compte',
+        details: authError.message
+      });
+    }
+
+    // Créer le document Firestore
+    const newUserRef = admin.firestore().collection('users').doc();
+    const userData = {
+      uid: newUserRef.id,
+      firebaseUid: firebaseUser.uid,
+      email: email,
+      nomComplet: nomComplet,
+      telephone: telephone || '',
+      adresse: adresse || '',
+      dateNaissance: dateNaissance || '',
+      role: role,
+      statut: 'actif',
+      isFirstLogin: true,
+      theoreticalHours: 0,
+      practicalHours: 0,
+      licenseType: 'B',
+      formation: formation || '',
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    await newUserRef.set(userData);
+    console.log('Document Firestore créé:', newUserRef.id);
+
+    res.status(201).json({
+      success: true,
+      message: 'Inscription simplifiée réussie',
+      user: {
+        uid: newUserRef.id,
+        firebaseUid: firebaseUser.uid,
+        email: userData.email,
+        nomComplet: userData.nomComplet,
+        role: userData.role,
+        statut: userData.statut,
+        isFirstLogin: userData.isFirstLogin,
+        emailVerified: firebaseUser.emailVerified,
+        createdAt: userData.createdAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Erreur inscription simplifiée:', error);
+    res.status(500).json({
+      error: 'Erreur inscription simplifiée',
+      message: error.message
+    });
+  }
+});
+
 // ✅ Middleware CORS spécifique pour Swagger UI
 app.use('/api-docs', cors({
   origin: true, // Autoriser toutes les origines pour Swagger UI
