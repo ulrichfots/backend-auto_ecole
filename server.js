@@ -48,7 +48,36 @@ app.use((req, res, next) => {
   next();
 });
 
-// ✅ Endpoint de test CORS
+/**
+ * @swagger
+ * /api/test-cors:
+ *   get:
+ *     summary: Test de la configuration CORS
+ *     description: Vérifie que la configuration CORS fonctionne correctement
+ *     tags: [Test]
+ *     responses:
+ *       200:
+ *         description: Test CORS réussi
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "CORS fonctionne correctement"
+ *                 origin:
+ *                   type: string
+ *                   example: "https://backend-auto-ecole-f14d.onrender.com"
+ *                   description: "Origine de la requête"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00Z"
+ */
 app.get('/api/test-cors', (req, res) => {
   res.json({
     success: true,
@@ -58,7 +87,129 @@ app.get('/api/test-cors', (req, res) => {
   });
 });
 
-// ✅ Endpoint de diagnostic Firebase complet
+/**
+ * @swagger
+ * /api/diagnostic-firebase:
+ *   get:
+ *     summary: Diagnostic complet de la configuration Firebase
+ *     description: Analyse la configuration Firebase, les variables d'environnement, les permissions et fournit des recommandations de résolution
+ *     tags: [Diagnostic]
+ *     responses:
+ *       200:
+ *         description: Diagnostic Firebase réussi
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Diagnostic Firebase complet"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ *                   example: "2024-01-15T10:30:00Z"
+ *                 environment:
+ *                   type: object
+ *                   properties:
+ *                     FIREBASE_SERVICE_ACCOUNT:
+ *                       type: boolean
+ *                       example: true
+ *                       description: "Variable d'environnement FIREBASE_SERVICE_ACCOUNT présente"
+ *                     FIREBASE_STORAGE_BUCKET:
+ *                       type: boolean
+ *                       example: true
+ *                       description: "Variable d'environnement FIREBASE_STORAGE_BUCKET présente"
+ *                     NODE_ENV:
+ *                       type: string
+ *                       example: "production"
+ *                       description: "Environnement Node.js"
+ *                 firebaseConfig:
+ *                   type: object
+ *                   properties:
+ *                     projectId:
+ *                       type: string
+ *                       example: "app-auto-ecole"
+ *                       description: "ID du projet Firebase"
+ *                     storageBucket:
+ *                       type: string
+ *                       example: "app-auto-ecole.appspot.com"
+ *                       description: "Bucket de stockage Firebase"
+ *                     credential:
+ *                       type: string
+ *                       example: "Configuré"
+ *                       description: "Statut des credentials Firebase"
+ *                 authTest:
+ *                   type: object
+ *                   properties:
+ *                     success:
+ *                       type: boolean
+ *                       example: true
+ *                     message:
+ *                       type: string
+ *                       example: "Email non trouvé (normal)"
+ *                     code:
+ *                       type: string
+ *                       example: "auth/user-not-found"
+ *                 firestoreTest:
+ *                   type: object
+ *                   properties:
+ *                     success:
+ *                       type: boolean
+ *                       example: true
+ *                     message:
+ *                       type: string
+ *                       example: "Connexion Firestore OK"
+ *                 createUserTest:
+ *                   type: object
+ *                   properties:
+ *                     success:
+ *                       type: boolean
+ *                       example: true
+ *                     message:
+ *                       type: string
+ *                       example: "Permissions OK (erreur attendue)"
+ *                     code:
+ *                       type: string
+ *                       example: "auth/invalid-email"
+ *                 recommendations:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       priority:
+ *                         type: string
+ *                         enum: [HIGH, MEDIUM, LOW]
+ *                         example: "HIGH"
+ *                       issue:
+ *                         type: string
+ *                         example: "Variable FIREBASE_SERVICE_ACCOUNT manquante"
+ *                       solution:
+ *                         type: string
+ *                         example: "Ajouter la variable d'environnement FIREBASE_SERVICE_ACCOUNT avec le JSON du service account"
+ *       500:
+ *         description: Erreur lors du diagnostic Firebase
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Erreur diagnostic Firebase"
+ *                 error:
+ *                   type: string
+ *                   example: "Firebase Admin SDK not initialized"
+ *                 timestamp:
+ *                   type: string
+ *                   format: date-time
+ */
 app.get('/api/diagnostic-firebase', async (req, res) => {
   try {
     const admin = require('./firebase').admin;
@@ -205,7 +356,157 @@ function generateRecommendations(envCheck, firebaseConfig, authTest, firestoreTe
   return recommendations;
 }
 
-// ✅ Endpoint d'inscription simplifié pour test
+/**
+ * @swagger
+ * /api/registration-simple:
+ *   post:
+ *     summary: Inscription simplifiée (test)
+ *     description: Endpoint d'inscription simplifié pour tester la création d'utilisateurs sans vérification d'email existant
+ *     tags: [Test]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - nomComplet
+ *               - email
+ *               - password
+ *             properties:
+ *               nomComplet:
+ *                 type: string
+ *                 example: "Jean Dupont"
+ *                 description: "Nom complet de l'utilisateur"
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: "jean.dupont@example.com"
+ *                 description: "Adresse email de l'utilisateur"
+ *               password:
+ *                 type: string
+ *                 minLength: 6
+ *                 example: "motdepasse123"
+ *                 description: "Mot de passe (minimum 6 caractères)"
+ *               telephone:
+ *                 type: string
+ *                 example: "0123456789"
+ *                 description: "Numéro de téléphone"
+ *               adresse:
+ *                 type: string
+ *                 example: "123 Rue de la Paix, 75001 Paris"
+ *                 description: "Adresse de l'utilisateur"
+ *               dateNaissance:
+ *                 type: string
+ *                 format: date
+ *                 example: "1990-05-15"
+ *                 description: "Date de naissance"
+ *               dateDebut:
+ *                 type: string
+ *                 format: date
+ *                 example: "2024-02-15"
+ *                 description: "Date de début de formation"
+ *               heurePreferee:
+ *                 type: string
+ *                 example: "14:00"
+ *                 description: "Heure préférée pour les cours"
+ *               formation:
+ *                 type: string
+ *                 example: "Permis B - Formation complète"
+ *                 description: "Type de formation"
+ *               role:
+ *                 type: string
+ *                 enum: [eleve, instructeur, admin]
+ *                 default: eleve
+ *                 example: "eleve"
+ *                 description: "Rôle de l'utilisateur"
+ *     responses:
+ *       201:
+ *         description: Inscription simplifiée réussie
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Inscription simplifiée réussie"
+ *                 registration:
+ *                   type: object
+ *                   properties:
+ *                     id:
+ *                       type: string
+ *                       example: "reg_123456789"
+ *                     nomComplet:
+ *                       type: string
+ *                       example: "Jean Dupont"
+ *                     email:
+ *                       type: string
+ *                       example: "jean.dupont@example.com"
+ *                     role:
+ *                       type: string
+ *                       example: "eleve"
+ *                     statut:
+ *                       type: string
+ *                       example: "En attente"
+ *                     dateCreation:
+ *                       type: string
+ *                       format: date-time
+ *                       example: "2024-01-15T10:30:00Z"
+ *                 userAccount:
+ *                   type: object
+ *                   properties:
+ *                     created:
+ *                       type: boolean
+ *                       example: true
+ *                     uid:
+ *                       type: string
+ *                       example: "user_123456789"
+ *                     firebaseUid:
+ *                       type: string
+ *                       example: "firebase_uid_123456789"
+ *                     role:
+ *                       type: string
+ *                       example: "eleve"
+ *                     statut:
+ *                       type: string
+ *                       example: "Actif"
+ *                     isFirstLogin:
+ *                       type: boolean
+ *                       example: true
+ *                     emailVerified:
+ *                       type: boolean
+ *                       example: false
+ *       400:
+ *         description: Données d'inscription invalides
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Données d'inscription invalides"
+ *                 details:
+ *                   type: string
+ *                   example: "Le mot de passe doit contenir au moins 6 caractères"
+ *       500:
+ *         description: Erreur lors de l'inscription simplifiée
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Erreur inscription simplifiée"
+ *                 message:
+ *                   type: string
+ *                   example: "Erreur lors de la création du compte Firebase"
+ */
 app.post('/api/registration-simple', async (req, res) => {
   try {
     const {
@@ -341,6 +642,20 @@ const swaggerOptions = {
         url: `http://localhost:${process.env.PORT || 5000}`,
         description: 'Serveur de développement',
       },
+    ],
+    tags: [
+      { name: 'Auth', description: 'Endpoints d\'authentification' },
+      { name: 'Registration', description: 'Endpoints d\'inscription' },
+      { name: 'Student', description: 'Endpoints des étudiants' },
+      { name: 'Sessions', description: 'Endpoints des séances' },
+      { name: 'Comments', description: 'Endpoints des commentaires' },
+      { name: 'News', description: 'Endpoints des actualités' },
+      { name: 'Upload', description: 'Endpoints de téléchargement' },
+      { name: 'Dashboard', description: 'Endpoints du tableau de bord' },
+      { name: 'Settings', description: 'Endpoints des paramètres' },
+      { name: 'Support', description: 'Endpoints du support' },
+      { name: 'Diagnostic', description: 'Endpoints de diagnostic Firebase' },
+      { name: 'Test', description: 'Endpoints de test et validation' }
     ],
     components: {
       securitySchemes: {
