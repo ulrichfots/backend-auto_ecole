@@ -293,24 +293,23 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // Vérifier si l'email existe déjà dans Firebase Auth
+    // Vérifier si l'email existe déjà dans Firestore (plus fiable que Firebase Auth)
     try {
-      const existingAuthUser = await admin.auth().getUserByEmail(email);
-      if (existingAuthUser) {
+      const usersSnapshot = await admin.firestore()
+        .collection('users')
+        .where('email', '==', email)
+        .limit(1)
+        .get();
+      
+      if (!usersSnapshot.empty) {
         return res.status(400).json({
           error: 'Email déjà utilisé',
           details: 'Un compte avec cette adresse email existe déjà dans le système'
         });
       }
-    } catch (authError) {
-      // Si l'utilisateur n'existe pas, l'erreur est normale, on continue
-      if (authError.code !== 'auth/user-not-found') {
-        console.error('Erreur lors de la vérification de l\'email:', authError);
-        return res.status(500).json({
-          error: 'Erreur lors de la vérification de l\'email',
-          details: 'Impossible de vérifier si l\'email existe déjà'
-        });
-      }
+    } catch (firestoreError) {
+      console.error('Erreur lors de la vérification de l\'email dans Firestore:', firestoreError);
+      // On continue même en cas d'erreur de vérification
     }
 
     // Génération d'un ID unique pour l'inscription
@@ -1054,24 +1053,23 @@ router.post('/create-user', checkAuth, async (req, res) => {
       });
     }
 
-    // Vérifier si l'email existe déjà dans Firebase Auth
+    // Vérifier si l'email existe déjà dans Firestore (plus fiable que Firebase Auth)
     try {
-      const existingAuthUser = await admin.auth().getUserByEmail(email);
-      if (existingAuthUser) {
+      const usersSnapshot = await admin.firestore()
+        .collection('users')
+        .where('email', '==', email)
+        .limit(1)
+        .get();
+      
+      if (!usersSnapshot.empty) {
         return res.status(400).json({
           error: 'Email déjà utilisé',
           details: 'Un compte avec cette adresse email existe déjà dans le système'
         });
       }
-    } catch (authError) {
-      // Si l'utilisateur n'existe pas, l'erreur est normale, on continue
-      if (authError.code !== 'auth/user-not-found') {
-        console.error('Erreur lors de la vérification de l\'email:', authError);
-        return res.status(500).json({
-          error: 'Erreur lors de la vérification de l\'email',
-          details: 'Impossible de vérifier si l\'email existe déjà'
-        });
-      }
+    } catch (firestoreError) {
+      console.error('Erreur lors de la vérification de l\'email dans Firestore:', firestoreError);
+      // On continue même en cas d'erreur de vérification
     }
 
     // Validation du rôle
