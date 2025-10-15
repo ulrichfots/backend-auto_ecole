@@ -348,19 +348,21 @@ router.post('/', async (req, res) => {
         .limit(1)
         .get();
 
-      if (existingUserQuery.empty && password) {
+      if (existingUserQuery.empty) {
         // Créer un utilisateur Firebase Auth avec mot de passe
-        try {
-          firebaseUser = await admin.auth().createUser({
-            email: email,
-            password: password,
-            displayName: nomComplet,
-            emailVerified: false
-          });
-          console.log('Utilisateur Firebase Auth créé:', firebaseUser.uid);
-        } catch (authError) {
-          console.error('Erreur création utilisateur Firebase Auth:', authError);
-          // Continuer sans créer l'utilisateur Auth si échec
+        if (password) {
+          try {
+            firebaseUser = await admin.auth().createUser({
+              email: email,
+              password: password,
+              displayName: nomComplet,
+              emailVerified: false
+            });
+            console.log('Utilisateur Firebase Auth créé:', firebaseUser.uid);
+          } catch (authError) {
+            console.error('Erreur création utilisateur Firebase Auth:', authError);
+            // Continuer sans créer l'utilisateur Auth si échec
+          }
         }
 
         // Créer le document utilisateur dans Firestore
