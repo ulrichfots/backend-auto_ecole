@@ -508,6 +508,85 @@ function generateRecommendations(envCheck, firebaseConfig, authTest, firestoreTe
  *                   example: "Erreur lors de la création du compte Firebase"
  */
 
+/**
+ * @swagger
+ * /api/firebase-status:
+ *   get:
+ *     summary: Diagnostic détaillé de la configuration Firebase
+ *     description: Analyse la configuration Firebase, les variables d'environnement et fournit des recommandations spécifiques
+ *     tags: [Diagnostic]
+ *     responses:
+ *       200:
+ *         description: Diagnostic Firebase réussi
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Diagnostic Firebase détaillé"
+ *                 environment:
+ *                   type: object
+ *                   properties:
+ *                     FIREBASE_SERVICE_ACCOUNT:
+ *                       type: boolean
+ *                       example: true
+ *                     FIREBASE_STORAGE_BUCKET:
+ *                       type: string
+ *                       example: "app-auto-ecole.appspot.com"
+ *                     NODE_ENV:
+ *                       type: string
+ *                       example: "production"
+ *                 serviceAccountInfo:
+ *                   type: object
+ *                   properties:
+ *                     project_id:
+ *                       type: string
+ *                       example: "app-auto-ecole"
+ *                     storage_bucket:
+ *                       type: string
+ *                       example: "app-auto-ecole.appspot.com"
+ *                     client_email:
+ *                       type: string
+ *                       example: "firebase-adminsdk-xxx@app-auto-ecole.iam.gserviceaccount.com"
+ *                 firebase:
+ *                   type: string
+ *                   example: "Initialisé"
+ *                 firebaseConfig:
+ *                   type: object
+ *                   properties:
+ *                     projectId:
+ *                       type: string
+ *                       example: "app-auto-ecole"
+ *                     storageBucket:
+ *                       type: string
+ *                       example: "app-auto-ecole.appspot.com"
+ *                     credential:
+ *                       type: string
+ *                       example: "Configuré"
+ *                 recommendations:
+ *                   type: array
+ *                   items:
+ *                     type: string
+ *                   example: ["Valeur suggérée pour FIREBASE_STORAGE_BUCKET: app-auto-ecole.appspot.com"]
+ *       500:
+ *         description: Erreur lors du diagnostic
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Erreur lors de l'analyse Firebase"
+ */
 // ✅ Endpoint de diagnostic détaillé Firebase
 app.get('/api/firebase-status', (req, res) => {
   try {
