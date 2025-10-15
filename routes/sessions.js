@@ -521,7 +521,7 @@ router.post('/export/pdf', checkAuth, async (req, res) => {
  *                 todaySessions:
  *                   type: 'number'
  *                   example: 0
- *                   description: 'Nombre de séances aujourd\'hui'
+ *                   description: 'Nombre de séances aujourd hui'
  *                 thisWeekSessions:
  *                   type: 'number'
  *                   example: 0

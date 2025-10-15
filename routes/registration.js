@@ -939,7 +939,7 @@ router.post('/create-user', checkAuth, async (req, res) => {
     // Créer le nouvel utilisateur
     const newUserRef = admin.firestore().collection('users').doc();
     
-    const userData = {
+    const newUserData = {
       uid: newUserRef.id,
       email: email,
       nomComplet: nomComplet,
@@ -957,7 +957,7 @@ router.post('/create-user', checkAuth, async (req, res) => {
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    await newUserRef.set(userData);
+    await newUserRef.set(newUserData);
     console.log('Compte utilisateur créé:', newUserRef.id, 'avec le rôle:', role);
 
     res.status(201).json({
@@ -965,12 +965,12 @@ router.post('/create-user', checkAuth, async (req, res) => {
       message: 'Compte utilisateur créé avec succès',
       user: {
         uid: newUserRef.id,
-        email: userData.email,
-        nomComplet: userData.nomComplet,
-        role: userData.role,
-        statut: userData.statut,
-        isFirstLogin: userData.isFirstLogin,
-        createdAt: userData.createdAt
+        email: newUserData.email,
+        nomComplet: newUserData.nomComplet,
+        role: newUserData.role,
+        statut: newUserData.statut,
+        isFirstLogin: newUserData.isFirstLogin,
+        createdAt: newUserData.createdAt
       }
     });
 
