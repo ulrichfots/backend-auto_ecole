@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { admin } = require('../firebase');
 const { validate, schemas } = require('../middlewares/validationMiddleware');
+const { checkAuth } = require('../middlewares/authMiddleware');
 const emailService = require('../services/emailService');
 const crypto = require('crypto');
 
