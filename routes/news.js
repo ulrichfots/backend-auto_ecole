@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { admin } = require('../firebase');
 const { validate, schemas } = require('../middlewares/validationMiddleware');
+const { checkAuth } = require('../middlewares/authMiddleware');
 const multer = require('multer');
 const { uploadImageToStorage } = require('../firebase');
 
@@ -22,38 +23,21 @@ const upload = multer({
 });
 
 // Middleware pour vérifier si l'utilisateur est admin ou instructeur
-const checkAuth = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      return res.status(401).json({ error: 'Token non fourni' });
-    }
-
-    const token = authHeader.split('Bearer ')[1];
-    const decodedToken = await admin.auth().verifyIdToken(token);
-    
-    // Récupérer les informations utilisateur depuis Firestore
-    const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
-    
-    if (!userDoc.exists) {
-      return res.status(401).json({ error: 'Utilisateur non trouvé' });
-    }
-
-    const userData = userDoc.data();
-    
-    // Vérifier que l'utilisateur est admin ou instructeur
-    if (!['admin', 'instructeur'].includes(userData.role)) {
-      return res.status(403).json({ error: 'Accès non autorisé' });
-    }
-    
-    req.user = {
-      uid: decodedToken.uid,
-      ...userData
-    };
-    next();
-  } catch (error) {
-    res.status(401).json({ error: 'Token invalide' });
+const checkAdminOrInstructor = async (req, res, next) => {
+  // Le middleware checkAuth a déjà vérifié l'authentification
+  // Il nous reste juste à vérifier le rôle
+  if (!['admin', 'instructeur'].includes(req.user.role)) {
+    return res.status(403).json({ 
+      error: 'Accès non autorisé',
+      message: 'Seuls les administrateurs et instructeurs peuvent accéder à cette fonctionnalité',
+      debug: {
+        userRole: req.user.role,
+        requiredRoles: ['admin', 'instructeur']
+      }
+    });
   }
+  
+  next();
 };
 
 /**
@@ -98,7 +82,7 @@ const checkAuth = async (req, res, next) => {
  *       403:
  *         description: Accès non autorisé
  */
-router.get('/stats', checkAuth, async (req, res) => {
+router.get('/stats', checkAuth, checkAdminOrInstructor, async (req, res) => {
   try {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -232,7 +216,7 @@ router.get('/stats', checkAuth, async (req, res) => {
  *       403:
  *         description: Accès non autorisé
  */
-router.get('/', checkAuth, async (req, res) => {
+router.get('/', checkAuth, checkAdminOrInstructor, async (req, res) => {
   try {
     const { status, category, author, search, page = 1, limit = 10 } = req.query;
     
@@ -385,7 +369,7 @@ router.get('/', checkAuth, async (req, res) => {
  *       403:
  *         description: Accès non autorisé
  */
-router.post('/', checkAuth, upload.single('image'), async (req, res) => {
+router.post('/', checkAuth, checkAdminOrInstructor, upload.single('image'), async (req, res) => {
   try {
     const {
       title,
@@ -505,7 +489,7 @@ router.post('/', checkAuth, upload.single('image'), async (req, res) => {
  *       403:
  *         description: Accès non autorisé
  */
-router.get('/:id', checkAuth, async (req, res) => {
+router.get('/:id', checkAuth, checkAdminOrInstructor, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -612,7 +596,7 @@ router.get('/:id', checkAuth, async (req, res) => {
  *       403:
  *         description: Accès non autorisé
  */
-router.put('/:id', checkAuth, upload.single('image'), async (req, res) => {
+router.put('/:id', checkAuth, checkAdminOrInstructor, upload.single('image'), async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -746,7 +730,7 @@ router.put('/:id', checkAuth, upload.single('image'), async (req, res) => {
  *       403:
  *         description: Accès non autorisé
  */
-router.delete('/:id', checkAuth, async (req, res) => {
+router.delete('/:id', checkAuth, checkAdminOrInstructor, async (req, res) => {
   try {
     const { id } = req.params;
 
