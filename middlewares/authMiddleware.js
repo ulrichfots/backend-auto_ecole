@@ -44,20 +44,62 @@ async function checkAuth(req, res, next) {
   }
 
   try {
-    // Vérifier et décoder le token
-    const decodedToken = await admin.auth().verifyIdToken(token);
+    let decodedToken;
+    let tokenType = 'unknown';
+    let userId = null;
     
+    // Essayer d'abord de vérifier comme ID token
+    try {
+      decodedToken = await admin.auth().verifyIdToken(token);
+      tokenType = 'idToken';
+      userId = decodedToken.uid;
+      console.log('✅ Token vérifié comme ID token');
+    } catch (idTokenError) {
+      console.log('⚠️ Token n\'est pas un ID token, tentative de vérification custom token...');
+      
+      // Pour les custom tokens, on doit les décoder manuellement
+      // car Firebase Admin ne peut pas les vérifier directement
+      try {
+        // Décoder le JWT manuellement pour extraire l'UID
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        
+        // Utiliser Buffer pour décoder en Node.js
+        const jsonPayload = Buffer.from(base64, 'base64').toString('utf8');
+        const payload = JSON.parse(jsonPayload);
+        
+        // Vérifier que c'est bien un custom token Firebase
+        if (payload.iss && payload.iss.includes('firebase-adminsdk') && payload.uid) {
+          tokenType = 'customToken';
+          userId = payload.uid;
+          decodedToken = {
+            uid: payload.uid,
+            email: payload.email || null,
+            iat: payload.iat,
+            exp: payload.exp
+          };
+          console.log('✅ Token vérifié comme custom token');
+        } else {
+          throw new Error('Token ne semble pas être un custom token Firebase valide');
+        }
+      } catch (customTokenError) {
+        console.error('❌ Erreur vérification custom token:', customTokenError.message);
+        throw new Error('Token invalide - ni ID token ni custom token valide');
+      }
+    }
+
     // Vérifier que l'utilisateur existe dans Firestore
-    const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
+    const userDoc = await admin.firestore().collection('users').doc(userId).get();
     
     if (!userDoc.exists) {
       return res.status(401).json({
         error: 'Utilisateur non trouvé',
         message: 'L\'utilisateur associé à ce token n\'existe pas dans la base de données',
         debug: {
-          uid: decodedToken.uid,
+          uid: userId,
           email: decodedToken.email,
-          userExists: false
+          userExists: false,
+          tokenType: tokenType
         }
       });
     }
@@ -70,8 +112,9 @@ async function checkAuth(req, res, next) {
         error: 'Compte suspendu',
         message: 'Votre compte a été suspendu. Contactez l\'administration.',
         debug: {
-          uid: decodedToken.uid,
-          statut: userData.statut
+          uid: userId,
+          statut: userData.statut,
+          tokenType: tokenType
         }
       });
     }
@@ -81,8 +124,9 @@ async function checkAuth(req, res, next) {
         error: 'Compte en attente',
         message: 'Votre compte est en attente de validation',
         debug: {
-          uid: decodedToken.uid,
-          statut: userData.statut
+          uid: userId,
+          statut: userData.statut,
+          tokenType: tokenType
         }
       });
     }
@@ -92,9 +136,11 @@ async function checkAuth(req, res, next) {
       ...decodedToken,
       role: userData.role,
       statut: userData.statut,
-      nom: userData.nom
+      nom: userData.nom,
+      tokenType: tokenType
     };
 
+    console.log(`✅ Authentification réussie avec ${tokenType} pour l'utilisateur ${userData.email}`);
     next();
   } catch (error) {
     console.error('Erreur vérification token:', error);

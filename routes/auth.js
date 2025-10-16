@@ -367,6 +367,40 @@ router.get('/verify-token', async (req, res) => {
  *       401:
  *         description: Token invalide ou manquant
  */
+
+/**
+ * @swagger
+ * /api/auth/test-token-compatibility:
+ *   get:
+ *     summary: Test de compatibilité des tokens
+ *     description: Teste si le serveur accepte les custom tokens et ID tokens
+ *     tags: [Authentification]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Test de compatibilité réussi
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Token accepté avec succès"
+ *                 tokenType:
+ *                   type: string
+ *                   enum: [idToken, customToken]
+ *                   example: "customToken"
+ *                 user:
+ *                   type: object
+ *                   description: "Informations utilisateur"
+ *       401:
+ *         description: Token invalide ou manquant
+ */
 router.get('/debug-token', async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
@@ -478,6 +512,32 @@ router.get('/debug-token', async (req, res) => {
         errorMessage: error.message,
         stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
       }
+    });
+  }
+});
+
+router.get('/test-token-compatibility', checkAuth, async (req, res) => {
+  try {
+    res.status(200).json({
+      success: true,
+      message: 'Token accepté avec succès',
+      tokenType: req.user.tokenType || 'unknown',
+      user: {
+        uid: req.user.uid,
+        email: req.user.email,
+        role: req.user.role,
+        nom: req.user.nom
+      },
+      debug: {
+        tokenLength: req.headers.authorization?.split('Bearer ')[1]?.length || 0,
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('Erreur test compatibilité:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Erreur lors du test de compatibilité'
     });
   }
 });
