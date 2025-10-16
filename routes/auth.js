@@ -214,7 +214,8 @@ router.post('/login', async (req, res) => {
       user: {
         uid: userDoc.id,
         email: userData.email,
-        nom: userData.nom,
+        nom: userData.nom || userData.nomComplet || '',
+        nomComplet: userData.nomComplet || userData.nom || '',
         role: userData.role, // ✅ Rôle inclus dans la réponse
         statut: userData.statut,
         isFirstLogin: userData.isFirstLogin || false,
@@ -322,7 +323,8 @@ router.get('/verify-token', async (req, res) => {
       user: {
         uid: userDoc.id,
         email: userData.email,
-        nom: userData.nom,
+        nom: userData.nom || userData.nomComplet || '',
+        nomComplet: userData.nomComplet || userData.nom || '',
         role: userData.role,
         statut: userData.statut,
         isFirstLogin: userData.isFirstLogin || false,
@@ -491,7 +493,8 @@ router.get('/debug-token', async (req, res) => {
       userInfo: {
         uid: userDoc.id,
         email: userData.email,
-        nom: userData.nom,
+        nom: userData.nom || userData.nomComplet || '',
+        nomComplet: userData.nomComplet || userData.nom || '',
         role: userData.role,
         statut: userData.statut,
         isFirstLogin: userData.isFirstLogin || false
@@ -803,7 +806,7 @@ router.post('/forgot-password', async (req, res) => {
     });
 
     // Envoyer l'email de réinitialisation
-    await emailService.sendPasswordResetEmail(email, resetToken, userData.nom);
+    await emailService.sendPasswordResetEmail(email, resetToken, userData.nom || userData.nomComplet || 'Utilisateur');
 
     res.status(200).json({
       message: 'Email de réinitialisation envoyé',

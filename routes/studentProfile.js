@@ -71,7 +71,8 @@ router.get('/:uid', checkAuth, async (req, res) => {
     // Formater les données du profil
     const profile = {
       uid: uid,
-      nom: studentData.nom,
+      nom: studentData.nom || studentData.nomComplet || '',
+      nomComplet: studentData.nomComplet || studentData.nom || '',
       email: studentData.email,
       statut: studentData.statut,
       dateInscription: studentData.createdAt,

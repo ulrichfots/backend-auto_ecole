@@ -225,9 +225,10 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
         id: doc.id,
         student: {
           id: sessionData.studentId,
-          nom: studentData?.nom || 'Élève inconnu',
+          nom: studentData?.nom || studentData?.nomComplet || 'Élève inconnu',
+          nomComplet: studentData?.nomComplet || studentData?.nom || 'Élève inconnu',
           email: studentData?.email || '',
-          initials: studentData?.nom ? studentData.nom.split(' ').map(name => name[0]).join('').toUpperCase() : 'E'
+          initials: (studentData?.nom || studentData?.nomComplet) ? (studentData.nom || studentData.nomComplet).split(' ').map(name => name[0]).join('').toUpperCase() : 'E'
         },
         instructor: {
           id: sessionData.instructorId,
@@ -781,9 +782,10 @@ router.get('/upcoming', checkAuth, checkReadPermissions, async (req, res) => {
         id: session.id,
         student: {
           id: session.studentId,
-          nom: studentData?.nom || 'Élève inconnu',
+          nom: studentData?.nom || studentData?.nomComplet || 'Élève inconnu',
+          nomComplet: studentData?.nomComplet || studentData?.nom || 'Élève inconnu',
           email: studentData?.email || '',
-          initials: studentData?.nom ? studentData.nom.split(' ').map(name => name[0]).join('').toUpperCase() : 'E'
+          initials: (studentData?.nom || studentData?.nomComplet) ? (studentData.nom || studentData.nomComplet).split(' ').map(name => name[0]).join('').toUpperCase() : 'E'
         },
         instructor: {
           id: session.instructorId,
