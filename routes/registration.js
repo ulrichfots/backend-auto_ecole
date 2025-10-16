@@ -313,6 +313,42 @@ router.post('/', async (req, res) => {
       // On continue même en cas d'erreur de vérification
     }
 
+    // Vérifier les conflits d'horaires
+    try {
+      console.log(`🔍 Vérification conflit d'horaires pour ${dateDebut} à ${heurePreferee}`);
+      
+      // Rechercher les inscriptions existantes pour la même date et heure
+      const conflictingRegistrations = await admin.firestore()
+        .collection('registrations')
+        .where('dateDebut', '==', dateDebut)
+        .where('heurePreferee', '==', heurePreferee)
+        .where('status', 'in', ['pending', 'confirmed'])
+        .get();
+
+      if (!conflictingRegistrations.empty) {
+        const conflictCount = conflictingRegistrations.size;
+        console.log(`❌ Conflit détecté: ${conflictCount} inscription(s) trouvée(s) pour ${dateDebut} à ${heurePreferee}`);
+        
+        return res.status(409).json({
+          error: 'Horaire non disponible',
+          message: `L'horaire ${heurePreferee} le ${dateDebut} est déjà pris par ${conflictCount} autre(s) élève(s)`,
+          details: {
+            dateDebut,
+            heurePreferee,
+            conflictCount,
+            suggestion: 'Veuillez choisir un autre horaire ou une autre date'
+          }
+        });
+      }
+      
+      console.log(`✅ Horaire disponible: ${dateDebut} à ${heurePreferee}`);
+    } catch (error) {
+      console.error('❌ Erreur vérification conflit horaires:', error);
+      return res.status(500).json({
+        error: 'Erreur lors de la vérification des horaires disponibles'
+      });
+    }
+
     // Génération d'un ID unique pour l'inscription
     const registrationId = `reg_${uuidv4().replace(/-/g, '').substring(0, 12)}`;
 
@@ -1158,6 +1194,241 @@ router.post('/create-user', checkAuth, async (req, res) => {
     res.status(500).json({
       error: 'Erreur lors de la création du compte utilisateur',
       message: process.env.NODE_ENV === 'development' ? error.message : 'Une erreur est survenue'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/registration/check-availability:
+ *   post:
+ *     summary: Vérifier la disponibilité d'un horaire
+ *     tags: [Inscription]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - dateDebut
+ *               - heurePreferee
+ *             properties:
+ *               dateDebut:
+ *                 type: string
+ *                 format: date
+ *                 example: "2024-02-15"
+ *                 description: "Date de début souhaitée"
+ *               heurePreferee:
+ *                 type: string
+ *                 example: "14:00"
+ *                 description: "Heure préférée"
+ *           example:
+ *             dateDebut: "2024-02-15"
+ *             heurePreferee: "14:00"
+ *     responses:
+ *       200:
+ *         description: Horaire disponible
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 available:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Horaire disponible"
+ *                 dateDebut:
+ *                   type: string
+ *                   example: "2024-02-15"
+ *                 heurePreferee:
+ *                   type: string
+ *                   example: "14:00"
+ *       409:
+ *         description: Horaire non disponible
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 available:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "L'horaire 14:00 le 2024-02-15 est déjà pris par 2 autre(s) élève(s)"
+ *                 conflictCount:
+ *                   type: number
+ *                   example: 2
+ *                 suggestion:
+ *                   type: string
+ *                   example: "Veuillez choisir un autre horaire ou une autre date"
+ *       400:
+ *         description: Données invalides
+ *       500:
+ *         description: Erreur serveur
+ */
+router.post('/check-availability', async (req, res) => {
+  try {
+    const { dateDebut, heurePreferee } = req.body;
+
+    // Validation des données requises
+    if (!dateDebut || !heurePreferee) {
+      return res.status(400).json({
+        error: 'Données manquantes',
+        details: 'Les champs dateDebut et heurePreferee sont requis'
+      });
+    }
+
+    console.log(`🔍 Vérification disponibilité pour ${dateDebut} à ${heurePreferee}`);
+    
+    // Rechercher les inscriptions existantes pour la même date et heure
+    const conflictingRegistrations = await admin.firestore()
+      .collection('registrations')
+      .where('dateDebut', '==', dateDebut)
+      .where('heurePreferee', '==', heurePreferee)
+      .where('status', 'in', ['pending', 'confirmed'])
+      .get();
+
+    if (!conflictingRegistrations.empty) {
+      const conflictCount = conflictingRegistrations.size;
+      console.log(`❌ Horaire occupé: ${conflictCount} inscription(s) trouvée(s)`);
+      
+      return res.status(200).json({
+        available: false,
+        message: `L'horaire ${heurePreferee} le ${dateDebut} est déjà pris par ${conflictCount} autre(s) élève(s)`,
+        dateDebut,
+        heurePreferee,
+        conflictCount,
+        suggestion: 'Veuillez choisir un autre horaire ou une autre date'
+      });
+    }
+    
+    console.log(`✅ Horaire disponible: ${dateDebut} à ${heurePreferee}`);
+    return res.status(200).json({
+      available: true,
+      message: 'Horaire disponible',
+      dateDebut,
+      heurePreferee,
+      conflictCount: 0
+    });
+
+  } catch (error) {
+    console.error('❌ Erreur vérification disponibilité:', error);
+    return res.status(500).json({
+      error: 'Erreur lors de la vérification de la disponibilité'
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/registration/available-slots:
+ *   get:
+ *     summary: Lister les créneaux horaires disponibles pour une date
+ *     tags: [Inscription]
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: date
+ *         description: "Date pour laquelle récupérer les créneaux disponibles"
+ *         example: "2024-02-15"
+ *     responses:
+ *       200:
+ *         description: Liste des créneaux disponibles
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 date:
+ *                   type: string
+ *                   example: "2024-02-15"
+ *                 availableSlots:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       time:
+ *                         type: string
+ *                         example: "09:00"
+ *                       available:
+ *                         type: boolean
+ *                         example: true
+ *                       conflictCount:
+ *                         type: number
+ *                         example: 0
+ *                   example:
+ *                     - time: "09:00"
+ *                       available: true
+ *                       conflictCount: 0
+ *                     - time: "10:00"
+ *                       available: false
+ *                       conflictCount: 2
+ *                     - time: "14:00"
+ *                       available: true
+ *                       conflictCount: 0
+ *       400:
+ *         description: Date manquante
+ *       500:
+ *         description: Erreur serveur
+ */
+router.get('/available-slots', async (req, res) => {
+  try {
+    const { date } = req.query;
+
+    if (!date) {
+      return res.status(400).json({
+        error: 'Date manquante',
+        details: 'Le paramètre date est requis'
+      });
+    }
+
+    console.log(`📅 Récupération des créneaux disponibles pour ${date}`);
+    
+    // Créneaux horaires standards (peut être configuré)
+    const standardSlots = [
+      '09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00'
+    ];
+
+    // Rechercher les inscriptions existantes pour cette date
+    const existingRegistrations = await admin.firestore()
+      .collection('registrations')
+      .where('dateDebut', '==', date)
+      .where('status', 'in', ['pending', 'confirmed'])
+      .get();
+
+    // Compter les conflits par créneau
+    const conflictsBySlot = {};
+    existingRegistrations.docs.forEach(doc => {
+      const data = doc.data();
+      const time = data.heurePreferee;
+      conflictsBySlot[time] = (conflictsBySlot[time] || 0) + 1;
+    });
+
+    // Générer la liste des créneaux avec leur disponibilité
+    const availableSlots = standardSlots.map(time => ({
+      time,
+      available: !conflictsBySlot[time],
+      conflictCount: conflictsBySlot[time] || 0
+    }));
+
+    console.log(`✅ ${availableSlots.filter(slot => slot.available).length}/${standardSlots.length} créneaux disponibles`);
+    
+    return res.status(200).json({
+      date,
+      availableSlots
+    });
+
+  } catch (error) {
+    console.error('❌ Erreur récupération créneaux:', error);
+    return res.status(500).json({
+      error: 'Erreur lors de la récupération des créneaux disponibles'
     });
   }
 });
