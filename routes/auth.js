@@ -340,6 +340,150 @@ router.get('/verify-token', async (req, res) => {
 
 /**
  * @swagger
+ * /api/auth/debug-token:
+ *   get:
+ *     summary: Debug du token d'authentification
+ *     description: Endpoint de diagnostic pour analyser les problèmes de token
+ *     tags: [Authentification]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Informations de debug du token
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 tokenInfo:
+ *                   type: object
+ *                   description: "Informations décodées du token"
+ *                 userInfo:
+ *                   type: object
+ *                   description: "Informations utilisateur depuis Firestore"
+ *                 debug:
+ *                   type: object
+ *                   description: "Informations de debug"
+ *       401:
+ *         description: Token invalide ou manquant
+ */
+router.get('/debug-token', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader) {
+      return res.status(401).json({
+        error: 'Aucun header Authorization fourni',
+        debug: {
+          hasAuthHeader: false,
+          authHeader: null
+        }
+      });
+    }
+
+    if (!authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        error: 'Format Authorization incorrect (doit commencer par "Bearer ")',
+        debug: {
+          hasAuthHeader: true,
+          authHeader: authHeader,
+          expectedFormat: 'Bearer <token>'
+        }
+      });
+    }
+
+    const token = authHeader.split('Bearer ')[1];
+    
+    if (!token) {
+      return res.status(401).json({
+        error: 'Token manquant après "Bearer "',
+        debug: {
+          hasAuthHeader: true,
+          authHeader: authHeader,
+          extractedToken: null
+        }
+      });
+    }
+
+    // Tenter de décoder le token
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(token);
+    } catch (verifyError) {
+      return res.status(401).json({
+        error: 'Token invalide ou expiré',
+        debug: {
+          hasAuthHeader: true,
+          authHeader: authHeader,
+          extractedToken: token.substring(0, 20) + '...',
+          verifyError: verifyError.message,
+          tokenType: 'ID Token attendu'
+        }
+      });
+    }
+
+    // Récupérer les informations utilisateur
+    const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
+    
+    if (!userDoc.exists) {
+      return res.status(401).json({
+        error: 'Utilisateur non trouvé dans Firestore',
+        debug: {
+          hasAuthHeader: true,
+          extractedToken: token.substring(0, 20) + '...',
+          decodedToken: {
+            uid: decodedToken.uid,
+            email: decodedToken.email,
+            iat: decodedToken.iat,
+            exp: decodedToken.exp
+          },
+          userExists: false
+        }
+      });
+    }
+
+    const userData = userDoc.data();
+
+    res.status(200).json({
+      success: true,
+      tokenInfo: {
+        uid: decodedToken.uid,
+        email: decodedToken.email,
+        issuedAt: new Date(decodedToken.iat * 1000).toISOString(),
+        expiresAt: new Date(decodedToken.exp * 1000).toISOString(),
+        isExpired: Date.now() > decodedToken.exp * 1000
+      },
+      userInfo: {
+        uid: userDoc.id,
+        email: userData.email,
+        nom: userData.nom,
+        role: userData.role,
+        statut: userData.statut,
+        isFirstLogin: userData.isFirstLogin || false
+      },
+      debug: {
+        hasAuthHeader: true,
+        tokenLength: token.length,
+        tokenPrefix: token.substring(0, 20) + '...',
+        userExists: true,
+        tokenType: 'ID Token valide'
+      }
+    });
+
+  } catch (error) {
+    console.error('Erreur debug token:', error);
+    res.status(500).json({
+      error: 'Erreur interne lors du debug',
+      debug: {
+        errorMessage: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      }
+    });
+  }
+});
+
+/**
+ * @swagger
  * /api/auth/refresh-token:
  *   post:
  *     summary: Rafraîchir le token d'authentification
