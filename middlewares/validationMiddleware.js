@@ -36,8 +36,11 @@ const schemas = {
     lastName: Joi.string().min(2).max(50).optional(),
     email: Joi.string().email().optional(),
     phone: Joi.string().pattern(/^[0-9]{10}$/).optional(),
+    telephone: Joi.string().pattern(/^[0-9+\s\-\(\)]{10,15}$/).optional(),
     dateOfBirth: Joi.string().isoDate().optional(),
+    dateNaissance: Joi.string().isoDate().optional(),
     address: Joi.string().max(100).optional(),
+    adresse: Joi.string().max(200).optional(),
     city: Joi.string().max(50).optional(),
     postalCode: Joi.string().pattern(/^[0-9]{5}$/).optional(),
     licenseType: Joi.string().valid('A', 'B', 'C', 'D', 'BE', 'CE', 'DE').optional(),
@@ -46,11 +49,15 @@ const schemas = {
     theoreticalHours: Joi.number().min(0).optional(),
     practicalHours: Joi.number().min(0).optional(),
     status: Joi.string().valid('en attente', 'actif', 'en formation', 'terminé', 'suspendu').optional(),
+    statut: Joi.string().valid('en attente', 'actif', 'en formation', 'terminé', 'suspendu').optional(),
     nextExam: Joi.string().isoDate().optional(),
     monitorComments: Joi.string().max(1000).optional(),
     theoreticalHoursMin: Joi.number().min(0).optional(),
     practicalHoursMin: Joi.number().min(0).optional(),
-    profileImageUrl: Joi.string().uri().optional()
+    profileImageUrl: Joi.string().uri().optional(),
+    // Nouvelles propriétés
+    numeroPermis: Joi.string().max(20).optional(),
+    contactUrgence: Joi.string().max(100).optional()
   }).min(1),
 
   // Schéma pour la création d'une session

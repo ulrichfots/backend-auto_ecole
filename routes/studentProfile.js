@@ -94,7 +94,13 @@ router.get('/:uid', checkAuth, async (req, res) => {
       profileImageUrl: studentData.profileImageUrl,
       licenseType: studentData.licenseType || 'B',
       nextExam: studentData.nextExam,
-      monitorComments: studentData.monitorComments || ''
+      monitorComments: studentData.monitorComments || '',
+      // Ajout des propriétés manquantes
+      numeroPermis: studentData.numeroPermis || '',
+      contactUrgence: studentData.contactUrgence || '',
+      telephone: studentData.telephone || '',
+      adresse: studentData.adresse || '',
+      dateNaissance: studentData.dateNaissance || ''
     };
 
     res.status(200).json(profile);
