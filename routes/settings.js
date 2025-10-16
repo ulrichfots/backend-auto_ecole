@@ -65,6 +65,62 @@ router.get('/', checkAuth, async (req, res) => {
 /**
  * @swagger
  * /api/settings/notifications:
+ *   get:
+ *     summary: Récupérer les préférences de notification
+ *     tags: [Paramètres]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Préférences récupérées avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sessionReminders:
+ *                   type: boolean
+ *                   example: true
+ *                 newsUpdates:
+ *                   type: boolean
+ *                   example: false
+ *       401:
+ *         description: Token manquant ou invalide
+ *       500:
+ *         description: Erreur serveur
+ */
+router.get('/notifications', checkAuth, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+    
+    console.log(`🔔 Récupération préférences notifications pour l'utilisateur ${userId}`);
+    
+    const userDoc = await admin.firestore().collection('users').doc(userId).get();
+    
+    if (!userDoc.exists) {
+      return res.status(404).json({ 
+        error: 'Utilisateur non trouvé' 
+      });
+    }
+
+    const userData = userDoc.data();
+    const notifications = userData.notifications || {};
+
+    res.status(200).json({
+      sessionReminders: notifications.sessionReminders || true,
+      newsUpdates: notifications.newsUpdates || true
+    });
+  } catch (error) {
+    console.error('❌ Erreur récupération notifications:', error);
+    res.status(500).json({ 
+      error: 'Erreur lors de la récupération des préférences de notification' 
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/settings/notifications:
  *   patch:
  *     summary: Mettre à jour les préférences de notification
  *     tags: [Paramètres]
@@ -111,10 +167,28 @@ router.patch('/notifications', checkAuth, async (req, res) => {
     const userId = req.user.uid;
     const { sessionReminders, newsUpdates } = req.body;
 
+    console.log(`🔔 Mise à jour notifications pour l'utilisateur ${userId}:`, { sessionReminders, newsUpdates });
+
     // Validation des données
+    if (sessionReminders === undefined || newsUpdates === undefined) {
+      return res.status(400).json({ 
+        error: 'Données manquantes',
+        message: 'Les champs sessionReminders et newsUpdates sont requis',
+        details: {
+          received: { sessionReminders, newsUpdates },
+          required: ['sessionReminders', 'newsUpdates']
+        }
+      });
+    }
+
     if (typeof sessionReminders !== 'boolean' || typeof newsUpdates !== 'boolean') {
       return res.status(400).json({ 
-        error: 'Les valeurs de notification doivent être des booléens' 
+        error: 'Type de données invalide',
+        message: 'Les valeurs de notification doivent être des booléens (true/false)',
+        details: {
+          sessionReminders: { received: typeof sessionReminders, expected: 'boolean' },
+          newsUpdates: { received: typeof newsUpdates, expected: 'boolean' }
+        }
       });
     }
 
