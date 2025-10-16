@@ -251,7 +251,14 @@ const swaggerOptions = {
             profileImageUrl: { type: 'string', nullable: true },
             licenseType: { type: 'string', enum: ['A', 'B', 'C', 'D', 'BE', 'CE', 'DE'], example: 'B' },
             nextExam: { type: 'string', format: 'date-time', nullable: true },
-            monitorComments: { type: 'string', example: 'Très bon élève, progression constante' }
+            monitorComments: { type: 'string', example: 'Très bon élève, progression constante' },
+            // Nouvelles propriétés ajoutées
+            nomComplet: { type: 'string', example: 'Camille Roux', description: 'Nom complet de l\'élève' },
+            numeroPermis: { type: 'string', example: '12345678901234', description: 'Numéro de permis de l\'élève' },
+            contactUrgence: { type: 'string', example: 'Marie Roux - 0123456789', description: 'Contact d\'urgence' },
+            telephone: { type: 'string', example: '0987654321', description: 'Numéro de téléphone' },
+            adresse: { type: 'string', example: '123 Rue de la Paix, 75001 Paris', description: 'Adresse complète' },
+            dateNaissance: { type: 'string', format: 'date', example: '1995-06-15', description: 'Date de naissance' }
           }
         },
         UpdateStudentProfile: {
@@ -275,7 +282,14 @@ const swaggerOptions = {
             monitorComments: { type: 'string', example: 'Très bon élève' },
             theoreticalHoursMin: { type: 'number', minimum: 0, example: 40 },
             practicalHoursMin: { type: 'number', minimum: 0, example: 20 },
-            profileImageUrl: { type: 'string', format: 'uri', example: 'https://example.com/profile.jpg' }
+            profileImageUrl: { type: 'string', format: 'uri', example: 'https://example.com/profile.jpg' },
+            // Nouvelles propriétés ajoutées
+            nomComplet: { type: 'string', example: 'Camille Roux', description: 'Nom complet de l\'élève' },
+            numeroPermis: { type: 'string', example: '12345678901234', description: 'Numéro de permis de l\'élève' },
+            contactUrgence: { type: 'string', example: 'Marie Roux - 0123456789', description: 'Contact d\'urgence' },
+            telephone: { type: 'string', pattern: '^[0-9+\\s\\-\\(\\)]{10,15}$', example: '0987654321', description: 'Numéro de téléphone' },
+            adresse: { type: 'string', example: '123 Rue de la Paix, 75001 Paris', description: 'Adresse complète' },
+            dateNaissance: { type: 'string', format: 'date', example: '1995-06-15', description: 'Date de naissance' }
           }
         },
         SessionStats: {
