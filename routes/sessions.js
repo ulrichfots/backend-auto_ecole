@@ -4,6 +4,29 @@ const { admin } = require('../firebase');
 const { checkAuth } = require('../middlewares/authMiddleware');
 const { validate, schemas } = require('../middlewares/validationMiddleware');
 
+// Middleware pour vérifier les permissions de lecture/écriture
+const checkReadPermissions = async (req, res, next) => {
+  // Tous les utilisateurs authentifiés peuvent lire
+  next();
+};
+
+const checkWritePermissions = async (req, res, next) => {
+  // Seuls les admins et instructeurs peuvent écrire
+  if (!['admin', 'instructeur'].includes(req.user.role)) {
+    return res.status(403).json({ 
+      error: 'Accès non autorisé',
+      message: 'Seuls les administrateurs et instructeurs peuvent modifier les séances',
+      debug: {
+        userRole: req.user.role,
+        requiredRoles: ['admin', 'instructeur'],
+        action: req.method
+      }
+    });
+  }
+  
+  next();
+};
+
 /**
  * @swagger
  * /api/sessions/stats:
@@ -126,7 +149,7 @@ router.get('/stats', checkAuth, async (req, res) => {
  *       500:
  *         description: Erreur serveur
  */
-router.get('/', checkAuth, async (req, res) => {
+router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
   try {
     const { date, instructorId, status, studentId, startDate, endDate } = req.query;
     
@@ -245,7 +268,7 @@ router.get('/', checkAuth, async (req, res) => {
  *       500:
  *         description: Erreur serveur
  */
-router.post('/', checkAuth, validate(schemas.createSession), async (req, res) => {
+router.post('/', checkAuth, checkWritePermissions, validate(schemas.createSession), async (req, res) => {
   try {
     const sessionData = req.body;
     
@@ -319,7 +342,7 @@ router.post('/', checkAuth, validate(schemas.createSession), async (req, res) =>
  *       500:
  *         description: Erreur serveur
  */
-router.patch('/:sessionId/status', checkAuth, validate(schemas.updateSessionStatus), async (req, res) => {
+router.patch('/:sessionId/status', checkAuth, checkWritePermissions, validate(schemas.updateSessionStatus), async (req, res) => {
   try {
     const { sessionId } = req.params;
     const { status, notes, actualStartTime, actualEndTime } = req.body;
@@ -386,7 +409,7 @@ router.patch('/:sessionId/status', checkAuth, validate(schemas.updateSessionStat
  *       500:
  *         description: Erreur serveur
  */
-router.get('/:sessionId', checkAuth, async (req, res) => {
+router.get('/:sessionId', checkAuth, checkReadPermissions, async (req, res) => {
   try {
     const { sessionId } = req.params;
     
@@ -665,7 +688,7 @@ router.get('/dashboard-stats', checkAuth, async (req, res) => {
  *       500:
  *         description: Erreur serveur
  */
-router.get('/upcoming', checkAuth, async (req, res) => {
+router.get('/upcoming', checkAuth, checkReadPermissions, async (req, res) => {
   try {
     const { status, instructorId, type, search, page = 1, limit = 10 } = req.query;
     
@@ -916,7 +939,7 @@ router.get('/types', checkAuth, async (req, res) => {
  *       500:
  *         description: Erreur serveur
  */
-router.put('/:id', checkAuth, async (req, res) => {
+router.put('/:id', checkAuth, checkWritePermissions, async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
@@ -998,7 +1021,7 @@ router.put('/:id', checkAuth, async (req, res) => {
  *       500:
  *         description: Erreur serveur
  */
-router.delete('/:id', checkAuth, async (req, res) => {
+router.delete('/:id', checkAuth, checkWritePermissions, async (req, res) => {
   try {
     const { id } = req.params;
 

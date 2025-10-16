@@ -40,6 +40,29 @@ const checkAdminOrInstructor = async (req, res, next) => {
   next();
 };
 
+// Middleware pour vérifier les permissions de lecture/écriture
+const checkReadPermissions = async (req, res, next) => {
+  // Tous les utilisateurs authentifiés peuvent lire
+  next();
+};
+
+const checkWritePermissions = async (req, res, next) => {
+  // Seuls les admins et instructeurs peuvent écrire
+  if (!['admin', 'instructeur'].includes(req.user.role)) {
+    return res.status(403).json({ 
+      error: 'Accès non autorisé',
+      message: 'Seuls les administrateurs et instructeurs peuvent modifier les actualités',
+      debug: {
+        userRole: req.user.role,
+        requiredRoles: ['admin', 'instructeur'],
+        action: req.method
+      }
+    });
+  }
+  
+  next();
+};
+
 /**
  * @swagger
  * /api/news/stats:
@@ -82,7 +105,7 @@ const checkAdminOrInstructor = async (req, res, next) => {
  *       403:
  *         description: Accès non autorisé
  */
-router.get('/stats', checkAuth, checkAdminOrInstructor, async (req, res) => {
+router.get('/stats', checkAuth, checkWritePermissions, async (req, res) => {
   try {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -216,7 +239,7 @@ router.get('/stats', checkAuth, checkAdminOrInstructor, async (req, res) => {
  *       403:
  *         description: Accès non autorisé
  */
-router.get('/', checkAuth, checkAdminOrInstructor, async (req, res) => {
+router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
   try {
     const { status, category, author, search, page = 1, limit = 10 } = req.query;
     
@@ -369,7 +392,7 @@ router.get('/', checkAuth, checkAdminOrInstructor, async (req, res) => {
  *       403:
  *         description: Accès non autorisé
  */
-router.post('/', checkAuth, checkAdminOrInstructor, upload.single('image'), async (req, res) => {
+router.post('/', checkAuth, checkWritePermissions, upload.single('image'), async (req, res) => {
   try {
     const {
       title,
@@ -489,7 +512,7 @@ router.post('/', checkAuth, checkAdminOrInstructor, upload.single('image'), asyn
  *       403:
  *         description: Accès non autorisé
  */
-router.get('/:id', checkAuth, checkAdminOrInstructor, async (req, res) => {
+router.get('/:id', checkAuth, checkReadPermissions, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -596,7 +619,7 @@ router.get('/:id', checkAuth, checkAdminOrInstructor, async (req, res) => {
  *       403:
  *         description: Accès non autorisé
  */
-router.put('/:id', checkAuth, checkAdminOrInstructor, upload.single('image'), async (req, res) => {
+router.put('/:id', checkAuth, checkWritePermissions, upload.single('image'), async (req, res) => {
   try {
     const { id } = req.params;
     const {
@@ -730,7 +753,7 @@ router.put('/:id', checkAuth, checkAdminOrInstructor, upload.single('image'), as
  *       403:
  *         description: Accès non autorisé
  */
-router.delete('/:id', checkAuth, checkAdminOrInstructor, async (req, res) => {
+router.delete('/:id', checkAuth, checkWritePermissions, async (req, res) => {
   try {
     const { id } = req.params;
 
