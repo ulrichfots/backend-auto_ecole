@@ -153,23 +153,41 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
   try {
     const { date, instructorId, status, studentId, startDate, endDate, upcoming, page = 1, limit = 10 } = req.query;
     
+    console.log(`📅 Récupération sessions avec paramètres:`, {
+      date, instructorId, status, studentId, startDate, endDate, upcoming, page, limit
+    });
+    
     let query = admin.firestore().collection('sessions');
 
-    // Appliquer les filtres
+    // Appliquer les filtres de date
+    let dateFilter = null;
+    
     if (upcoming === 'true') {
-      // Filtrer pour les séances à venir
-      query = query.where('scheduledDate', '>=', new Date());
+      // Filtrer pour les séances à venir (depuis maintenant)
+      dateFilter = new Date();
     } else if (date) {
+      // Filtrer pour une date spécifique
       const targetDate = new Date(date);
       const startOfDay = new Date(targetDate);
       startOfDay.setHours(0, 0, 0, 0);
       const endOfDay = new Date(targetDate);
       endOfDay.setHours(23, 59, 59, 999);
-      query = query.where('scheduledDate', '>=', startOfDay).where('scheduledDate', '<=', endOfDay);
+      
+      // Si upcoming=true ET date sont présents, prendre la date la plus récente
+      if (upcoming === 'true') {
+        dateFilter = new Date(Math.max(new Date(), startOfDay));
+      } else {
+        dateFilter = startOfDay;
+      }
     } else if (startDate && endDate) {
       const start = new Date(startDate);
       const end = new Date(endDate);
       query = query.where('scheduledDate', '>=', start).where('scheduledDate', '<=', end);
+    }
+    
+    // Appliquer le filtre de date si défini
+    if (dateFilter) {
+      query = query.where('scheduledDate', '>=', dateFilter);
     }
 
     if (instructorId) {
@@ -192,10 +210,19 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
     
     // Récupérer les sessions avec pagination (Firestore ne supporte pas offset)
     // Pour l'instant, on récupère tout et on pagine côté serveur
-    const allSessionsSnapshot = await query
-      .orderBy('scheduledDate', 'asc')
-      .orderBy('scheduledTime', 'asc')
-      .get();
+    let allSessionsSnapshot;
+    try {
+      allSessionsSnapshot = await query
+        .orderBy('scheduledDate', 'asc')
+        .orderBy('scheduledTime', 'asc')
+        .get();
+    } catch (orderError) {
+      console.error('❌ Erreur lors du tri par scheduledDate/scheduledTime:', orderError);
+      
+      // Essayer sans le tri si les champs n'existent pas
+      console.log('🔄 Tentative de récupération sans tri...');
+      allSessionsSnapshot = await query.get();
+    }
     
     // Pagination côté serveur
     const startIndex = (pageNum - 1) * limitNum;
@@ -248,6 +275,7 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
       };
     }));
 
+    console.log(`✅ Sessions retournées: ${sessions.length}`);
     res.status(200).json({
       sessions,
       pagination: {
@@ -258,8 +286,11 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Erreur récupération sessions:', error);
-    res.status(500).json({ error: 'Erreur lors de la récupération des sessions' });
+    console.error('❌ Erreur récupération sessions:', error);
+    res.status(500).json({ 
+      error: 'Erreur lors de la récupération des sessions',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

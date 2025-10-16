@@ -447,16 +447,59 @@ router.patch('/:id', checkAuth, validate(schemas.vote), async (req, res) => {
   const commentId = req.params.id;
   const uid = req.user.uid;
 
+  console.log(`👍 Vote ${type} pour le commentaire ${commentId} par l'utilisateur ${uid}`);
+
   try {
     const commentRef = admin.firestore().collection('comments').doc(commentId);
     const voteRef = commentRef.collection('votes').doc(uid);
     const voteSnap = await voteRef.get();
 
+    let previousVote = null;
     if (voteSnap.exists) {
-      return res.status(403).json({ error: 'Vous avez déjà voté ce commentaire.' });
+      previousVote = voteSnap.data().type;
+      console.log(`🔄 Changement de vote: ${previousVote} → ${type}`);
+    } else {
+      console.log(`🆕 Nouveau vote: ${type}`);
     }
 
-    // Mise à jour du compteur
+    // Si l'utilisateur vote la même chose, annuler le vote
+    if (previousVote === type) {
+      // Annuler le vote
+      await commentRef.update({
+        [type === 'like' ? 'likes' : 'dislikes']: admin.firestore.FieldValue.increment(-1),
+      });
+      await voteRef.delete();
+      
+      return res.status(200).json({ 
+        message: `🗑️ Vote ${type} annulé`,
+        action: 'removed',
+        previousVote: type
+      });
+    }
+
+    // Si l'utilisateur change de vote
+    if (previousVote && previousVote !== type) {
+      // Décrémenter l'ancien vote et incrémenter le nouveau
+      await commentRef.update({
+        [previousVote === 'like' ? 'likes' : 'dislikes']: admin.firestore.FieldValue.increment(-1),
+        [type === 'like' ? 'likes' : 'dislikes']: admin.firestore.FieldValue.increment(1),
+      });
+      
+      // Mettre à jour le vote
+      await voteRef.set({
+        type,
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      return res.status(200).json({ 
+        message: `🔄 Vote changé: ${previousVote} → ${type}`,
+        action: 'changed',
+        previousVote,
+        newVote: type
+      });
+    }
+
+    // Nouveau vote (pas de vote précédent)
     const field = type === 'like' ? 'likes' : 'dislikes';
     await commentRef.update({
       [field]: admin.firestore.FieldValue.increment(1),
@@ -468,10 +511,92 @@ router.patch('/:id', checkAuth, validate(schemas.vote), async (req, res) => {
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    res.status(200).json({ message: `✅ ${type} enregistré` });
+    res.status(200).json({ 
+      message: `✅ ${type} enregistré`,
+      action: 'added',
+      newVote: type
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur serveur' });
+    console.error('❌ Erreur vote commentaire:', err);
+    res.status(500).json({ 
+      error: 'Erreur serveur',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+/**
+ * @swagger
+ * /api/comments/{id}/vote-status:
+ *   get:
+ *     summary: Récupérer le statut de vote d'un utilisateur sur un commentaire
+ *     tags: [Commentaires]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID du commentaire
+ *     responses:
+ *       200:
+ *         description: Statut de vote récupéré
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 hasVoted:
+ *                   type: boolean
+ *                   example: true
+ *                 voteType:
+ *                   type: string
+ *                   enum: [like, dislike]
+ *                   example: "like"
+ *                 canVote:
+ *                   type: boolean
+ *                   example: true
+ *       401:
+ *         description: Token manquant ou invalide
+ *       404:
+ *         description: Commentaire non trouvé
+ *       500:
+ *         description: Erreur serveur
+ */
+router.get('/:id/vote-status', checkAuth, async (req, res) => {
+  try {
+    const commentId = req.params.id;
+    const uid = req.user.uid;
+
+    console.log(`🔍 Récupération statut de vote pour le commentaire ${commentId} par l'utilisateur ${uid}`);
+
+    const commentRef = admin.firestore().collection('comments').doc(commentId);
+    const voteRef = commentRef.collection('votes').doc(uid);
+    const voteSnap = await voteRef.get();
+
+    if (!voteSnap.exists) {
+      return res.status(200).json({
+        hasVoted: false,
+        voteType: null,
+        canVote: true
+      });
+    }
+
+    const voteData = voteSnap.data();
+    res.status(200).json({
+      hasVoted: true,
+      voteType: voteData.type,
+      canVote: true // L'utilisateur peut toujours changer de vote
+    });
+
+  } catch (err) {
+    console.error('❌ Erreur récupération statut vote:', err);
+    res.status(500).json({ 
+      error: 'Erreur serveur',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
   }
 });
 
