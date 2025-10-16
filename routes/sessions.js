@@ -151,12 +151,15 @@ router.get('/stats', checkAuth, async (req, res) => {
  */
 router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
   try {
-    const { date, instructorId, status, studentId, startDate, endDate } = req.query;
+    const { date, instructorId, status, studentId, startDate, endDate, upcoming, page = 1, limit = 10 } = req.query;
     
     let query = admin.firestore().collection('sessions');
 
     // Appliquer les filtres
-    if (date) {
+    if (upcoming === 'true') {
+      // Filtrer pour les séances à venir
+      query = query.where('scheduledDate', '>=', new Date());
+    } else if (date) {
       const targetDate = new Date(date);
       const startOfDay = new Date(targetDate);
       startOfDay.setHours(0, 0, 0, 0);
@@ -179,10 +182,28 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
       query = query.where('studentId', '==', studentId);
     }
 
-    const sessionsSnapshot = await query.orderBy('scheduledTime', 'asc').get();
+    // Ajouter la pagination
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    
+    // Compter le total d'abord pour la pagination
+    const totalSnapshot = await query.get();
+    const total = totalSnapshot.size;
+    
+    // Récupérer les sessions avec pagination (Firestore ne supporte pas offset)
+    // Pour l'instant, on récupère tout et on pagine côté serveur
+    const allSessionsSnapshot = await query
+      .orderBy('scheduledDate', 'asc')
+      .orderBy('scheduledTime', 'asc')
+      .get();
+    
+    // Pagination côté serveur
+    const startIndex = (pageNum - 1) * limitNum;
+    const endIndex = startIndex + limitNum;
+    const paginatedDocs = allSessionsSnapshot.docs.slice(startIndex, endIndex);
     
     // Enrichir les données avec les informations des élèves et instructeurs
-    const sessions = await Promise.all(sessionsSnapshot.docs.map(async (doc) => {
+    const sessions = await Promise.all(paginatedDocs.map(async (doc) => {
       const sessionData = doc.data();
       
       // Récupérer les données de l'élève
@@ -226,7 +247,15 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
       };
     }));
 
-    res.status(200).json({ sessions });
+    res.status(200).json({
+      sessions,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum)
+      }
+    });
   } catch (error) {
     console.error('Erreur récupération sessions:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération des sessions' });
