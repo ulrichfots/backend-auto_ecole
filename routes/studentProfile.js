@@ -162,35 +162,77 @@ router.put('/:uid', checkAuth, validate(schemas.updateStudentProfile), async (re
     const currentUser = req.user.uid;
     const updateData = req.body;
 
+    console.log(`📝 Mise à jour profil élève ${uid} par ${currentUser}:`, updateData);
+
     // Vérifier les permissions
     const userDoc = await admin.firestore().collection('users').doc(currentUser).get();
+    if (!userDoc.exists) {
+      console.error(`❌ Utilisateur actuel non trouvé: ${currentUser}`);
+      return res.status(404).json({ 
+        error: 'Utilisateur non trouvé',
+        debug: { currentUser, uid }
+      });
+    }
+
     const userData = userDoc.data();
+    const hasPermission = userData.role === 'admin' || 
+                         userData.role === 'instructeur' || 
+                         currentUser === uid;
     
-    if (!userData || (userData.role !== 'admin' && userData.role !== 'instructeur' && currentUser !== uid)) {
-      return res.status(403).json({ error: 'Accès non autorisé' });
+    if (!hasPermission) {
+      console.error(`❌ Permissions insuffisantes: ${currentUser} (${userData.role}) → ${uid}`);
+      return res.status(403).json({ 
+        error: 'Accès non autorisé',
+        debug: {
+          currentUser,
+          currentUserRole: userData.role,
+          targetUser: uid,
+          allowed: userData.role === 'admin' || userData.role === 'instructeur' || currentUser === uid
+        }
+      });
     }
 
     // Vérifier que l'élève existe
     const studentDoc = await admin.firestore().collection('users').doc(uid).get();
     if (!studentDoc.exists) {
-      return res.status(404).json({ error: 'Élève introuvable' });
+      console.error(`❌ Élève non trouvé: ${uid}`);
+      return res.status(404).json({ 
+        error: 'Élève introuvable',
+        debug: { targetUser: uid }
+      });
     }
+
+    // Nettoyer les données (supprimer les champs vides)
+    const cleanedData = {};
+    Object.keys(updateData).forEach(key => {
+      const value = updateData[key];
+      if (value !== null && value !== undefined && value !== '') {
+        cleanedData[key] = value;
+      }
+    });
+
+    console.log(`🧹 Données nettoyées:`, cleanedData);
 
     // Mettre à jour le profil
     await admin.firestore().collection('users').doc(uid).update({
-      ...updateData,
+      ...cleanedData,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
-    const updatedFields = Object.keys(updateData);
+    const updatedFields = Object.keys(cleanedData);
+    console.log(`✅ Profil mis à jour avec succès. Champs modifiés:`, updatedFields);
 
     res.status(200).json({
       message: 'Profil mis à jour avec succès',
-      updatedFields: updatedFields
+      updatedFields: updatedFields,
+      updatedCount: updatedFields.length
     });
   } catch (error) {
-    console.error('Erreur mise à jour profil:', error);
-    res.status(500).json({ error: 'Erreur lors de la mise à jour du profil' });
+    console.error('❌ Erreur mise à jour profil:', error);
+    res.status(500).json({ 
+      error: 'Erreur lors de la mise à jour du profil',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

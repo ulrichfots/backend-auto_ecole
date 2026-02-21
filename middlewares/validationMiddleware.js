@@ -35,29 +35,29 @@ const schemas = {
     firstName: Joi.string().min(2).max(50).optional(),
     lastName: Joi.string().min(2).max(50).optional(),
     email: Joi.string().email().optional(),
-    phone: Joi.string().pattern(/^[0-9]{10}$/).optional(),
-    telephone: Joi.string().pattern(/^[0-9+\s\-\(\)]{10,15}$/).optional(),
+    phone: Joi.string().pattern(/^[0-9+\s\-\(\)]{8,15}$/).optional().allow(''),
+    telephone: Joi.string().pattern(/^[0-9+\s\-\(\)]{8,15}$/).optional().allow(''),
     dateOfBirth: Joi.string().isoDate().optional(),
     dateNaissance: Joi.string().isoDate().optional(),
-    address: Joi.string().max(100).optional(),
-    adresse: Joi.string().max(200).optional(),
-    city: Joi.string().max(50).optional(),
-    postalCode: Joi.string().pattern(/^[0-9]{5}$/).optional(),
+    address: Joi.string().max(200).optional().allow(''),
+    adresse: Joi.string().max(300).optional().allow(''),
+    city: Joi.string().max(100).optional().allow(''),
+    postalCode: Joi.string().pattern(/^[0-9A-Za-z\s\-]{3,10}$/).optional().allow(''),
     licenseType: Joi.string().valid('A', 'B', 'C', 'D', 'BE', 'CE', 'DE').optional(),
-    instructorId: Joi.string().optional(),
+    instructorId: Joi.string().optional().allow(''),
     startDate: Joi.string().isoDate().optional(),
     theoreticalHours: Joi.number().min(0).optional(),
     practicalHours: Joi.number().min(0).optional(),
     status: Joi.string().valid('en attente', 'actif', 'en formation', 'terminé', 'suspendu').optional(),
     statut: Joi.string().valid('en attente', 'actif', 'en formation', 'terminé', 'suspendu').optional(),
     nextExam: Joi.string().isoDate().optional(),
-    monitorComments: Joi.string().max(1000).optional(),
+    monitorComments: Joi.string().max(2000).optional().allow(''),
     theoreticalHoursMin: Joi.number().min(0).optional(),
     practicalHoursMin: Joi.number().min(0).optional(),
-    profileImageUrl: Joi.string().uri().optional(),
+    profileImageUrl: Joi.string().uri().optional().allow(''),
     // Nouvelles propriétés
-    numeroPermis: Joi.string().max(20).optional(),
-    contactUrgence: Joi.string().max(100).optional()
+    numeroPermis: Joi.string().max(30).optional().allow(''),
+    contactUrgence: Joi.string().max(200).optional().allow('')
   }).min(1),
 
   // Schéma pour la création d'une session
@@ -128,13 +128,39 @@ const schemas = {
 // Middleware de validation générique
 const validate = (schema) => {
   return (req, res, next) => {
-    const { error } = schema.validate(req.body);
+    console.log('🔍 Validation des données:', req.body);
+    
+    const { error, value } = schema.validate(req.body, { 
+      abortEarly: false,
+      stripUnknown: true,
+      allowUnknown: false
+    });
+    
     if (error) {
+      console.error('❌ Erreur de validation:', error.details);
+      
+      const validationErrors = error.details.map(detail => ({
+        field: detail.path.join('.'),
+        message: detail.message,
+        value: detail.context?.value,
+        type: detail.type
+      }));
+
       return res.status(400).json({
         error: 'Données invalides',
-        details: error.details.map(detail => detail.message)
+        message: 'Les données fournies ne respectent pas le format attendu',
+        validationErrors: validationErrors,
+        receivedData: req.body,
+        debug: process.env.NODE_ENV === 'development' ? {
+          schema: schema.describe(),
+          errors: error.details
+        } : undefined
       });
     }
+    
+    // Remplacer req.body par les données validées et nettoyées
+    req.body = value;
+    console.log('✅ Validation réussie:', value);
     next();
   };
 };
