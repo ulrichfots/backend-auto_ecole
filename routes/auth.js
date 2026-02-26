@@ -19,6 +19,7 @@ router.post('/logout', authController.logout);
 router.post('/forgot-password', authController.forgotPassword);
 
 // --- TACHES-43 : CREATE USER ---
-router.post('/createUser', authController.createUser);
+// Remplace ta ligne par celle-ci :
+router.post('/createUser', authController.checkAdmin, authController.createUser);
 
 module.exports = router;

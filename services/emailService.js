@@ -79,7 +79,44 @@ class EmailService {
       throw error;
     }
   }
+/**
+   * Envoie un email de réinitialisation de mot de passe
+   * @param {string} email - L'adresse de l'élève
+   * @param {string} resetLink - Le lien généré par Firebase
+   */
+  async sendResetPasswordEmail(email, resetLink) {
+    const mailOptions = {
+      from: `"Auto École" <${process.env.SMTP_USER || 'amenouveveyesu@gmail.com'}>`,
+      to: email,
+      subject: 'Réinitialisation de votre mot de passe - Auto École',
+      html: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;">
+          <div style="background: #1e3a8a; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+            <h1>Réinitialisation de mot de passe</h1>
+          </div>
+          <div style="padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+            <p>Bonjour,</p>
+            <p>Vous avez demandé la réinitialisation de votre mot de passe pour votre compte Auto École.</p>
+            <p>Cliquez sur le bouton ci-dessous pour choisir un nouveau mot de passe :</p>
+            <div style="text-align: center; margin: 30px 0;">
+              <a href="${resetLink}" style="background: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold;">Réinitialiser mon mot de passe</a>
+            </div>
+            <p>Ce lien expirera dans une heure. Si vous n'avez pas demandé ce changement, vous pouvez ignorer cet email en toute sécurité.</p>
+            <p>Cordialement,<br>L'équipe Auto École</p>
+          </div>
+        </div>
+      `
+    };
 
+    try {
+      const result = await this.transporter.sendMail(mailOptions);
+      console.log('Email de récupération envoyé :', result.messageId);
+      return { success: true };
+    } catch (error) {
+      console.error('Erreur envoi email récupération :', error);
+      throw error;
+    }
+  }
   /**
    * Génère le template HTML pour l'email de confirmation étudiant
    */
