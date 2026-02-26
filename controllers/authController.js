@@ -1,6 +1,10 @@
 const { admin } = require('../firebase');
 const emailService = require('../services/emailService');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+
+// Récupération du secret depuis le .env
+const JWT_SECRET = process.env.JWT_SECRET || 'votre_cle_secrete_ici';
 
 // --- MIDDLEWARE : CHECK ADMIN ---
 exports.checkAdmin = async (req, res, next) => {
@@ -9,7 +13,8 @@ exports.checkAdmin = async (req, res, next) => {
         if (!authHeader) return res.status(401).json({ error: 'Token non fourni' });
 
         const token = authHeader.split('Bearer ')[1];
-        const decodedToken = await admin.auth().verifyIdToken(token);
+        // Utilisation de JWT au lieu de Firebase Admin pour la vérification
+        const decodedToken = jwt.verify(token, JWT_SECRET);
         
         const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
         if (!userDoc.exists || userDoc.data().role !== 'admin') {
@@ -35,10 +40,6 @@ exports.login = async (req, res) => {
             return res.status(400).json({ error: 'Format d\'email invalide' });
         }
 
-        if (password.length < 6) {
-            return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères' });
-        }
-
         const usersSnapshot = await admin.firestore()
             .collection('users')
             .where('email', '==', email)
@@ -52,18 +53,20 @@ exports.login = async (req, res) => {
         const userDoc = usersSnapshot.docs[0];
         const userData = userDoc.data();
 
+        // Vérification du statut
         if (userData.statut === 'suspendu') {
             return res.status(403).json({ error: 'Votre compte a été suspendu.' });
         }
-
         if (userData.statut === 'en attente') {
             return res.status(403).json({ error: 'Votre compte est en attente', status: 'en attente' });
         }
 
-        const customToken = await admin.auth().createCustomToken(userDoc.id, {
-            role: userData.role,
-            email: userData.email
-        });
+        // Génération du JWT
+        const token = jwt.sign(
+            { uid: userDoc.id, email: userData.email, role: userData.role },
+            JWT_SECRET,
+            { expiresIn: rememberMe ? '7d' : '24h' }
+        );
 
         res.status(200).json({
             message: 'Connexion réussie',
@@ -73,11 +76,9 @@ exports.login = async (req, res) => {
                 nom: userData.nom || userData.nomComplet || '',
                 role: userData.role,
                 statut: userData.statut,
-                isFirstLogin: userData.isFirstLogin || false,
-                profileImageUrl: userData.profileImageUrl || null
+                isFirstLogin: userData.isFirstLogin || false
             },
-            token: customToken,
-            expiresIn: rememberMe ? '7d' : '1d'
+            token: token
         });
     } catch (error) {
         console.error('Erreur login:', error);
@@ -90,9 +91,9 @@ exports.verifyToken = async (req, res) => {
     try {
         const authHeader = req.headers.authorization;
         const token = authHeader.split('Bearer ')[1];
-        const decodedToken = await admin.auth().verifyIdToken(token);
-        const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
+        const decodedToken = jwt.verify(token, JWT_SECRET);
         
+        const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
         if (!userDoc.exists) return res.status(401).json({ valid: false, error: 'Utilisateur non trouvé' });
 
         const userData = userDoc.data();
@@ -111,41 +112,12 @@ exports.verifyToken = async (req, res) => {
     }
 };
 
-// --- TACHES-42 : FORGOT PASSWORD ---
-exports.forgotPassword = async (req, res) => {
-    const { email } = req.body;
-    try {
-        if (!email) return res.status(400).json({ error: 'Email requis' });
-
-        const usersSnapshot = await admin.firestore().collection('users').where('email', '==', email).limit(1).get();
-        if (usersSnapshot.empty) return res.status(400).json({ error: 'Compte introuvable' });
-
-        const userDoc = usersSnapshot.docs[0];
-        const resetToken = crypto.randomBytes(32).toString('hex');
-        const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-
-        await admin.firestore().collection('password_reset_tokens').doc(resetToken).set({
-            userId: userDoc.id,
-            email: email,
-            expiresAt: expiresAt,
-            used: false,
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        await emailService.sendPasswordResetEmail(email, resetToken, userDoc.data().nom || 'Utilisateur');
-
-        res.status(200).json({ message: 'Email de réinitialisation envoyé', email, expiresIn: '10 minutes' });
-    } catch (error) {
-        res.status(500).json({ error: 'Erreur interne' });
-    }
-};
-
 // --- DEBUG TOKEN ---
 exports.debugToken = async (req, res) => {
     try {
         const authHeader = req.headers.authorization;
         const token = authHeader.split('Bearer ')[1];
-        const decodedToken = await admin.auth().verifyIdToken(token);
+        const decodedToken = jwt.verify(token, JWT_SECRET);
         const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
 
         res.status(200).json({
@@ -157,12 +129,80 @@ exports.debugToken = async (req, res) => {
         res.status(401).json({ error: 'Token invalide' });
     }
 };
+// --- TACHES-42 : FORGOT PASSWORD ---
+
+exports.forgotPassword = async (req, res) => {
+
+    const { email } = req.body;
+
+    try {
+
+        if (!email) {
+
+            return res.status(400).json({ error: 'Email requis' });
+
+        }
+
+
+
+        // 1. Vérifier si l'utilisateur existe dans Firestore
+
+        const userSnapshot = await admin.firestore()
+
+            .collection('users')
+
+            .where('email', '==', email)
+
+            .limit(1)
+
+            .get();
+
+
+
+        if (userSnapshot.empty) {
+
+            // Pour la sécurité, on répond souvent "Lien envoyé" même si l'email n'existe pas
+
+            return res.status(200).json({ message: 'Si cet email existe, un lien de réinitialisation a été envoyé.' });
+
+        }
+
+
+
+        // 2. Générer un lien de réinitialisation via Firebase Auth
+
+        const link = await admin.auth().generatePasswordResetLink(email);
+
+
+
+        // 3. Envoyer l'email via ton service d'email
+
+        // Note: Cela utilisera le SMTP_PASS que tu configureras plus tard avec ton client
+
+        await emailService.sendResetPasswordEmail(email, link);
+
+
+
+        res.status(200).json({ message: 'Lien de réinitialisation envoyé avec succès' });
+
+    } catch (error) {
+
+        console.error('Erreur forgotPassword:', error);
+
+        res.status(500).json({ error: 'Erreur lors de l\'envoi de l\'email' });
+
+    }
+
+};
+
 
 // --- TACHES-43 : CREATE USER ---
 exports.createUser = async (req, res) => {
     const { email, password, nom, role } = req.body;
     try {
+        // Ici on garde admin.auth() pour créer le compte dans Firebase Auth
         const userRecord = await admin.auth().createUser({ email, password });
+        
         await admin.firestore().collection('users').doc(userRecord.uid).set({
             email, nom, role,
             statut: 'en attente',
@@ -175,27 +215,27 @@ exports.createUser = async (req, res) => {
         res.status(400).json({ error: 'Erreur création', details: error.message });
     }
 };
-
 // --- REFRESH TOKEN ---
 exports.refreshToken = async (req, res) => {
     try {
         const authHeader = req.headers.authorization;
-        const token = authHeader.split('Bearer ')[1];
-        const decodedToken = await admin.auth().verifyIdToken(token);
-        const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
-        
-        const userData = userDoc.data();
-        const customToken = await admin.auth().createCustomToken(decodedToken.uid, {
-            role: userData.role,
-            email: userData.email
-        });
+        if (!authHeader) return res.status(401).json({ error: 'Token non fourni' });
 
-        res.status(200).json({ message: 'Token rafraîchi', token: customToken });
+        const token = authHeader.split('Bearer ')[1];
+        const decodedToken = jwt.verify(token, JWT_SECRET);
+
+        // On génère un nouveau token tout frais
+        const newToken = jwt.sign(
+            { uid: decodedToken.uid, email: decodedToken.email, role: decodedToken.role },
+            JWT_SECRET,
+            { expiresIn: '24h' }
+        );
+
+        res.status(200).json({ token: newToken });
     } catch (error) {
-        res.status(401).json({ error: 'Token invalide' });
+        res.status(401).json({ error: 'Session expirée' });
     }
 };
-
 // --- LOGOUT ---
 exports.logout = async (req, res) => {
     res.status(200).json({ message: 'Déconnexion réussie' });
