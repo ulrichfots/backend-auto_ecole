@@ -6,7 +6,6 @@ constructor() {
     this.transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        // On s'assure de nettoyer les espaces au cas où ils viendraient de Render
         user: (process.env.SMTP_USER || 'amenouveveyesu@gmail.com').trim(),
         pass: (process.env.SMTP_PASS || process.env.EMAIL_PASSWORD).trim()
       }
