@@ -16,13 +16,12 @@ app.use(cors({
 
 app.use(express.json());
 
-// ✅ 2. Importation des Routes
-// Changement ici : on utilise 'auth.js'
+// ✅ 2. Chargement des routes (Ajoute tes autres routes ici au besoin)
 try {
     app.use('/api/auth', require('./routes/auth'));
-    console.log("✅ Route /api/auth chargée (fichier auth.js)");
+    console.log("✅ Route /api/auth chargée");
 } catch (error) {
-    console.error("❌ Erreur : Impossible de charger ./routes/auth.js ->", error.message);
+    console.error("❌ Erreur chargement routes:", error.message);
 }
 
 // ✅ 3. Configuration Swagger
@@ -32,31 +31,38 @@ const swaggerOptions = {
     info: {
       title: 'API Auto École',
       version: '1.4.0',
-      description: 'Gestion complète auto-école',
+      description: 'API complète : Auth, Registration, Student, Sessions, News, Support, etc.',
     },
     servers: [
-      { url: 'https://backend-auto-ecole.onrender.com', description: 'Production' }
+      { url: 'https://backend-auto-ecole.onrender.com', description: 'Production' },
+      { url: `http://localhost:${process.env.PORT || 5000}`, description: 'Développement' }
     ],
     components: {
       securitySchemes: {
-        bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }
-      }
-      // On laisse Swagger extraire les schemas (StudentProfile, SessionStats, etc.) des fichiers
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+        },
+      },
     },
   },
-  // ✅ On scanne TOUS les fichiers pour retrouver News, Support, Seed, etc.
-  apis: ["./routes/*.js", "./models/*.js"], 
+  // ✅ SCAN TOTAL : Routes, Modèles et Contrôleurs pour ne rater aucun Schéma
+  apis: [
+    "./routes/*.js",
+    "./models/*.js",
+    "./controllers/*.js"
+  ], 
 };
 
 try {
     const specs = swaggerJsdoc(swaggerOptions);
-    app.use("/api-docs", swaggerUi.serve);
-    app.get("/api-docs", swaggerUi.setup(specs, {
+    app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs, {
         swaggerOptions: { persistAuthorization: true }
     }));
     console.log("✅ Documentation Swagger configurée sur /api-docs");
 } catch (err) {
-    console.error("❌ Erreur Swagger:", err.message);
+    console.error("❌ Erreur Swagger JSDoc:", err.message);
 }
 
 app.get("/", (req, res) => {
