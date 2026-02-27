@@ -32,31 +32,27 @@ const swaggerOptions = {
     info: {
       title: 'API Auto École',
       version: '1.4.0',
-      description: 'Gestion auto-école Firebase & JWT',
     },
-    servers: [
-      {
-        url: 'https://backend-auto-ecole-f14d.onrender.com',
-        description: 'Production',
-      },
-      {
-        url: `http://localhost:${process.env.PORT || 5000}`,
-        description: 'Développement',
-      },
-    ],
+    servers: [{ url: 'https://backend-auto-ecole.onrender.com' }],
     components: {
       securitySchemes: {
-        bearerAuth: {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
-        },
+        bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
       },
     },
-    security: [{ bearerAuth: [] }],
+    // ON DÉCLARE UNE ROUTE TEST ICI DIRECTEMENT
+    paths: {
+      "/api/auth/login": {
+        "post": {
+          "tags": ["Auth"],
+          "summary": "Test de connexion",
+          "responses": {
+            "200": { "description": "Succès" }
+          }
+        }
+      }
+    }
   },
-  // On scanne tous les fichiers .js dans le dossier routes
-  apis: ["./routes/*.js"], 
+  apis: [], // On met vide pour l'instant pour ne pas scanner les fichiers corrompus
 };
 
 try {
