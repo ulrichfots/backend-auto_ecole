@@ -7,30 +7,15 @@ const swaggerUi = require("swagger-ui-express");
 const app = express();
 
 // ✅ Configuration CORS avancée
+// ✅ Configuration CORS simplifiée pour le test et la production
 app.use(cors({
-  origin: function (origin, callback) {
-    // Autoriser les requêtes sans origine (ex: Postman, Swagger UI)
-    if (!origin) return callback(null, true);
-    
-    const allowedOrigins = [
-    'http://localhost:52366', // Flutter Web local
-    'http://localhost:3000',  // Front React local
-      'https://ton-frontend.onrender.com', // Front déployé
-      'http://localhost:5000', // Swagger UI local
-      'https://backend-auto-ecole-f14d.onrender.com' // Swagger UI déployé
-    ];
-    
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      console.log('CORS blocked origin:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+  origin: true, // Accepte automatiquement l'origine qui fait la requête
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With']
 }));
+
+// Supprime également le bloc app.use('/api-docs', cors(...)) plus bas pour éviter les conflits
 
 app.use(express.json());
 
@@ -55,12 +40,12 @@ app.use((req, res, next) => {
 
 
 // ✅ Middleware CORS spécifique pour Swagger UI
-app.use('/api-docs', cors({
-  origin: true, // Autoriser toutes les origines pour Swagger UI
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
-  credentials: true,
-}));
+//app.use('/api-docs', cors({
+  //origin: true, // Autoriser toutes les origines pour Swagger UI
+ // methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+ // allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+ // credentials: true,
+//}));
 
 // ✅ Configuration Swagger
 const swaggerOptions = {
