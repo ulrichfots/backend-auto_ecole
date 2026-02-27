@@ -6,8 +6,7 @@ const swaggerUi = require("swagger-ui-express");
 
 const app = express();
 
-// ✅ 1. Configuration CORS unique et globale
-// Cette configuration gère tout (Render, Localhost et Swagger)
+// ✅ 1. Configuration CORS
 app.use(cors({
   origin: true, 
   credentials: true,
@@ -17,34 +16,25 @@ app.use(cors({
 
 app.use(express.json());
 
-// ✅ 2. Middleware de debug (Utile pour voir les erreurs d'origine sur Render)
-app.use((req, res, next) => {
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`${req.method} ${req.url} - Origin: ${req.headers.origin || 'Direct Access'}`);
-  }
-  next();
-});
-
-// ✅ 3. Configuration Swagger
+// ✅ 2. Configuration Swagger
 const swaggerOptions = {
   definition: {
     openapi: '3.0.0',
     info: {
       title: 'API Auto École',
       version: '1.4.0',
-      description: 'API complète pour la gestion d\'une auto-école avec authentification Firebase, inscriptions avec création automatique de comptes utilisateur avec mots de passe, gestion des rôles, pages de profil, support et paramètres utilisateur',
+      description: 'Gestion auto-école Firebase & JWT',
     },
     servers: [
       {
         url: 'https://backend-auto-ecole-f14d.onrender.com',
-        description: 'Serveur de production',
+        description: 'Production',
       },
       {
         url: `http://localhost:${process.env.PORT || 5000}`,
-        description: 'Serveur de développement',
+        description: 'Développement',
       },
     ],
-    // ✅ ACTIVE LA SÉCURITÉ GLOBALE (Le cadenas sur Swagger)
     security: [{ bearerAuth: [] }],
     components: {
       securitySchemes: {
@@ -54,57 +44,48 @@ const swaggerOptions = {
           bearerFormat: 'JWT',
         },
       },
-      schemas: {
-        // ... (Garde tous tes schémas ici, je les ai omis pour la lisibilité)
-        DashboardStats: { type: 'object', properties: { /* ... */ } },
-        StudentProfile: { type: 'object', properties: { /* ... */ } },
-        // Ajoute tes schémas NewsArticle, Session, etc., tels que définis dans ton message
-      }
+      // J'ai vidé les schemas ici pour éviter les erreurs YAML si tu en as oublié un
+      // Tu pourras les rajouter un par un
+      schemas: {} 
     },
+    // ✅ Correction du TypeError : On laisse Swagger générer les tags 
+    // ou on s'assure qu'ils sont parfaitement définis sans virgule traînante
     tags: [
-      { name: 'Auth', description: 'Endpoints d\'authentification' },
-      { name: 'Registration', description: 'Endpoints d\'inscription' },
-      { name: 'Student', description: 'Endpoints des étudiants' },
-      { name: 'Sessions', description: 'Endpoints des séances' },
-      { name: 'Dashboard', description: 'Endpoints du tableau de bord' },
-      // ... autres tags
+      { name: 'Auth' },
+      { name: 'Registration' },
+      { name: 'Student' }
     ],
   },
-  // ✅ IMPORTANT : Scanner server.js ET les fichiers dans le dossier routes
-  apis: ["./server.js", "./routes/*.js"], 
+  // On cible uniquement les fichiers existants pour éviter les erreurs de lecture
+  apis: ["./routes/*.js"], 
 };
 
-const specs = swaggerJsdoc(swaggerOptions);
+// Initialisation sécurisée de Swagger
+try {
+    const specs = swaggerJsdoc(swaggerOptions);
+    app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs, {
+        swaggerOptions: { persistAuthorization: true }
+    }));
+} catch (err) {
+    console.error("❌ Erreur Swagger JSDoc:", err);
+}
 
-// ✅ 4. Montage de Swagger UI
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs, {
-  swaggerOptions: {
-    persistAuthorization: true, // Garde le token même après un refresh
-  }
-}));
+// ✅ 3. Importation des Routes (IMPORTANT : Vérifie bien tes noms de fichiers)
+// Si un fichier n'existe pas, Render va crash.
+try {
+    app.use('/api/auth', require('./routes/authRoutes'));
+    // Commente ces lignes si les fichiers n'existent pas encore physiquement :
+    // app.use('/api/registration', require('./routes/registrationRoutes'));
+    // app.use('/api/student', require('./routes/studentRoutes'));
+} catch (error) {
+    console.error("❌ Erreur lors du chargement des routes:", error.message);
+}
 
-// ✅ 5. Importation des Routes
-// Assure-toi que les noms de fichiers correspondent à tes fichiers réels
-app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/registration', require('./routes/registrationRoutes'));
-app.use('/api/student', require('./routes/studentRoutes'));
-app.use('/api/sessions', require('./routes/sessionRoutes'));
-// ... ajoute les autres selon tes fichiers
-
-// ✅ 6. Route de base
 app.get("/", (req, res) => {
-  res.json({ 
-    message: "🚀 API Auto-École opérationnelle !", 
-    documentation: "/api-docs" 
-  });
+  res.json({ status: "ok", message: "API Live" });
 });
 
-// ✅ 7. Lancement du serveur
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`
-  ✅ Serveur démarré avec succès !
-  🌍 Local: http://localhost:${PORT}
-  📄 Doc: http://localhost:${PORT}/api-docs
-  `);
+  console.log(`✅ Serveur sur port ${PORT}`);
 });
