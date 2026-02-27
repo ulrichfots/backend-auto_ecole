@@ -32,89 +32,20 @@ const swaggerOptions = {
     info: {
       title: 'API Auto École',
       version: '1.4.0',
-      description: 'Gestion complète de l\'authentification'
+      description: 'Gestion complète auto-école',
     },
     servers: [
-      { url: 'https://backend-auto-ecole.onrender.com', description: 'Production' },
-      { url: `http://localhost:${process.env.PORT || 5000}`, description: 'Local' }
+      { url: 'https://backend-auto-ecole.onrender.com', description: 'Production' }
     ],
     components: {
       securitySchemes: {
         bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }
       }
+      // On laisse Swagger extraire les schemas (StudentProfile, SessionStats, etc.) des fichiers
     },
-    paths: {
-      "/api/auth/login": {
-        "post": {
-          "tags": ["Auth"],
-          "summary": "Connexion utilisateur",
-          "requestBody": {
-            "required": true,
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "email": { "type": "string", "example": "admin@test.com" },
-                    "password": { "type": "string", "example": "password123" }
-                  }
-                }
-              }
-            }
-          },
-          "responses": { "200": { "description": "Token généré" }, "401": { "description": "Identifiants invalides" } }
-        }
-      },
-      "/api/auth/verify-token": {
-        "get": {
-          "tags": ["Auth"],
-          "summary": "Vérifier le token JWT",
-          "security": [{ "bearerAuth": [] }],
-          "responses": { "200": { "description": "Token valide" }, "401": { "description": "Non autorisé" } }
-        }
-      },
-      "/api/auth/forgot-password": {
-        "post": {
-          "tags": ["Auth"],
-          "summary": "Réinitialisation du mot de passe",
-          "requestBody": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": { "email": { "type": "string" } }
-                }
-              }
-            }
-          },
-          "responses": { "200": { "description": "Email envoyé" } }
-        }
-      },
-      "/api/auth/createUser": {
-        "post": {
-          "tags": ["Auth"],
-          "summary": "Créer un utilisateur (Admin uniquement)",
-          "security": [{ "bearerAuth": [] }],
-          "requestBody": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "email": { "type": "string" },
-                    "password": { "type": "string" },
-                    "role": { "type": "string", "enum": ["admin", "instructeur", "eleve"] }
-                  }
-                }
-              }
-            }
-          },
-          "responses": { "201": { "description": "Utilisateur créé" }, "403": { "description": "Accès refusé" } }
-        }
-      }
-    }
   },
-  apis: [] // On laisse vide pour éviter les erreurs de scan
+  // ✅ On scanne TOUS les fichiers pour retrouver News, Support, Seed, etc.
+  apis: ["./routes/*.js", "./models/*.js"], 
 };
 
 try {
