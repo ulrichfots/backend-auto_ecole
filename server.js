@@ -1052,7 +1052,11 @@ app.use('*', (req, res) => {
 
 // ✅ Lancement du serveur
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+
+// Ajout de '0.0.0.0' pour permettre l'accès externe sur Render
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Serveur démarré sur le port ${PORT}`);
-  console.log(`📚 Documentation Swagger disponible sur: http://localhost:${PORT}/api-docs`);
+  // Petit conseil : n'affiche localhost que si tu es en développement
+  const host = process.env.NODE_ENV === 'production' ? 'votre-url.render.com' : `localhost:${PORT}`;
+  console.log(`📚 Documentation Swagger disponible sur: http://${host}/api-docs`);
 });
