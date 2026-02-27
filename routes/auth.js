@@ -133,7 +133,7 @@ router.post('/forgot-password', authController.forgotPassword);
  * 201:
  * description: Utilisateur créé avec succès
  * 403:
- * description: Accès refusé (non-admin)
+ * description: Accès refusé
  */
 router.post('/createUser', authController.checkAdmin, authController.createUser);
 

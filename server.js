@@ -16,7 +16,16 @@ app.use(cors({
 
 app.use(express.json());
 
-// ✅ 2. Configuration Swagger
+// ✅ 2. Importation des Routes
+// Changement ici : on utilise 'auth.js'
+try {
+    app.use('/api/auth', require('./routes/auth'));
+    console.log("✅ Route /api/auth chargée (fichier auth.js)");
+} catch (error) {
+    console.error("❌ Erreur : Impossible de charger ./routes/auth.js ->", error.message);
+}
+
+// ✅ 3. Configuration Swagger
 const swaggerOptions = {
   definition: {
     openapi: '3.0.0',
@@ -35,7 +44,6 @@ const swaggerOptions = {
         description: 'Développement',
       },
     ],
-    security: [{ bearerAuth: [] }],
     components: {
       securitySchemes: {
         bearerAuth: {
@@ -44,48 +52,29 @@ const swaggerOptions = {
           bearerFormat: 'JWT',
         },
       },
-      // J'ai vidé les schemas ici pour éviter les erreurs YAML si tu en as oublié un
-      // Tu pourras les rajouter un par un
-      schemas: {} 
     },
-    // ✅ Correction du TypeError : On laisse Swagger générer les tags 
-    // ou on s'assure qu'ils sont parfaitement définis sans virgule traînante
-    tags: [
-      { name: 'Auth' },
-      { name: 'Registration' },
-      { name: 'Student' }
-    ],
+    security: [{ bearerAuth: [] }],
   },
-  // On cible uniquement les fichiers existants pour éviter les erreurs de lecture
+  // On scanne tous les fichiers .js dans le dossier routes
   apis: ["./routes/*.js"], 
 };
 
-// Initialisation sécurisée de Swagger
 try {
     const specs = swaggerJsdoc(swaggerOptions);
-    app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(specs, {
+    app.use("/api-docs", swaggerUi.serve);
+    app.get("/api-docs", swaggerUi.setup(specs, {
         swaggerOptions: { persistAuthorization: true }
     }));
+    console.log("✅ Documentation Swagger configurée sur /api-docs");
 } catch (err) {
-    console.error("❌ Erreur Swagger JSDoc:", err);
-}
-
-// ✅ 3. Importation des Routes (IMPORTANT : Vérifie bien tes noms de fichiers)
-// Si un fichier n'existe pas, Render va crash.
-try {
-    app.use('/api/auth', require('./routes/authRoutes'));
-    // Commente ces lignes si les fichiers n'existent pas encore physiquement :
-    // app.use('/api/registration', require('./routes/registrationRoutes'));
-    // app.use('/api/student', require('./routes/studentRoutes'));
-} catch (error) {
-    console.error("❌ Erreur lors du chargement des routes:", error.message);
+    console.error("❌ Erreur Swagger:", err.message);
 }
 
 app.get("/", (req, res) => {
-  res.json({ status: "ok", message: "API Live" });
+  res.json({ status: "ok", message: "API Live", docs: "/api-docs" });
 });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Serveur sur port ${PORT}`);
+  console.log(`🚀 Serveur en ligne sur le port ${PORT}`);
 });
