@@ -1,77 +1,61 @@
-const admin = require('../firebase').admin;
+// middlewares/authMiddleware.js
+const jwt = require('jsonwebtoken');
+const admin = require('../firebase').admin; // Pour accéder à Firestore et vérifier l'existence des users
+const JWT_SECRET = process.env.JWT_SECRET || 'votre_cle_secrete_ici';
 
-// 🔐 Vérification du token Firebase
+/**
+ * Middleware pour vérifier le JWT custom
+ */
 async function checkAuth(req, res, next) {
   const authHeader = req.headers.authorization;
-
-  // Vérifier présence header
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({
-      error: 'Token manquant ou format invalide',
-      message: 'Utilisez: Authorization: Bearer <token>'
-    });
+    return res.status(401).json({ error: 'Token manquant ou format incorrect' });
   }
 
   const token = authHeader.split('Bearer ')[1];
 
   try {
-    // Vérifie le Firebase ID Token
-    const decodedToken = await admin.auth().verifyIdToken(token);
-    const uid = decodedToken.uid;
+    // Vérification du JWT custom
+    const decodedToken = jwt.verify(token, JWT_SECRET);
 
-    // Vérifie que l'utilisateur existe dans Firestore
-    const userDoc = await admin.firestore().collection('users').doc(uid).get();
-
+    // Vérifier que l'utilisateur existe dans Firestore
+    const userDoc = await admin.firestore().collection('users').doc(decodedToken.uid).get();
     if (!userDoc.exists) {
-      return res.status(401).json({
-        error: 'Utilisateur non trouvé'
-      });
+      return res.status(401).json({ error: 'Utilisateur non trouvé' });
     }
 
     const userData = userDoc.data();
 
-    // Vérifier statut
+    // Vérifier le statut du compte
     if (userData.statut === 'suspendu') {
-      return res.status(403).json({
-        error: 'Compte suspendu'
-      });
+      return res.status(403).json({ error: 'Compte suspendu' });
     }
-
     if (userData.statut === 'en attente') {
-      return res.status(403).json({
-        error: 'Compte en attente de validation'
-      });
+      return res.status(403).json({ error: 'Compte en attente' });
     }
 
-    // Injecter user dans la requête
+    // Ajouter les infos utilisateur à la requête
     req.user = {
-      uid: uid,
+      uid: decodedToken.uid,
       email: decodedToken.email,
       role: userData.role,
-      statut: userData.statut,
-      nom: userData.nom
+      nom: userData.nom || '',
+      statut: userData.statut
     };
 
     next();
   } catch (error) {
-    console.error('❌ Erreur vérification token:', error.message);
-    return res.status(401).json({
-      error: 'Token invalide ou expiré'
-    });
+    return res.status(401).json({ error: 'Token invalide ou expiré', details: error.message });
   }
 }
 
-// 🔐 Vérification rôle admin
-function checkAdmin(req, res, next) {
-  if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({
-      error: 'Accès réservé aux administrateurs'
-    });
-  }
+/**
+ * Middleware pour vérifier que l'utilisateur est admin
+ */
+async function checkAdmin(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Utilisateur non authentifié' });
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Accès admin requis' });
   next();
 }
 
-module.exports = {
-  checkAuth,
-  checkAdmin
-};
+module.exports = { checkAuth, checkAdmin };

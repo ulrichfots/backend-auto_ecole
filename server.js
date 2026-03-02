@@ -44,7 +44,10 @@ const swaggerOptions = {
     },
   },
   // On liste les dossiers un par un pour ne pas saturer le parseur
-  apis: ["./routes/*.js", "./models/*.js"], 
+ apis: [
+  "./routes/*.js",     // toutes les routes (y compris auth.js)
+  // "./models/*.js"    // si tu veux garder la doc de tes modèles, sinon tu peux commenter
+], 
 };
 
 // ... (le reste de ton code)
