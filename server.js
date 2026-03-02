@@ -25,35 +25,29 @@ try {
 }
 
 // ✅ 3. Configuration Swagger
+// ... (tes imports restent les mêmes)
+
 const swaggerOptions = {
   definition: {
     openapi: '3.0.0',
     info: {
       title: 'API Auto École',
       version: '1.4.0',
-      description: 'API complète : Auth, Registration, Student, Sessions, News, Support, etc.',
     },
     servers: [
-      { url: 'https://backend-auto-ecole.onrender.com', description: 'Production' },
-      { url: `http://localhost:${process.env.PORT || 5000}`, description: 'Développement' }
+      { url: 'https://backend-auto-ecole.onrender.com' }
     ],
     components: {
       securitySchemes: {
-        bearerAuth: {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
-        },
-      },
+        bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }
+      }
     },
   },
-  // ✅ SCAN TOTAL : Routes, Modèles et Contrôleurs pour ne rater aucun Schéma
-  apis: [
-    "./routes/*.js",
-    "./models/*.js",
-    "./controllers/*.js"
-  ], 
+  // On liste les dossiers un par un pour ne pas saturer le parseur
+  apis: ["./routes/*.js", "./models/*.js"], 
 };
+
+// ... (le reste de ton code)
 
 try {
     const specs = swaggerJsdoc(swaggerOptions);
