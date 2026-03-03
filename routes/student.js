@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { admin } = require('../firebase');
 const { checkAuth, checkAdmin } = require('../middlewares/authMiddleware');
+const { validate, schemas } = require('../middlewares/validationMiddleware');
 
 /**
  * @swagger
@@ -670,6 +671,104 @@ router.get('/objectives', checkAuth, async (req, res) => {
       error: 'Erreur lors de la récupération des objectifs',
       details: error.message 
     });
+  }
+});
+
+/**
+ * @swagger
+ * /api/student/{uid}:
+ *   put:
+ *     summary: Modifier élève
+ *     tags: [Élève]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: uid
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Identifiant de l'élève
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/UpdateStudentProfile'
+ *     responses:
+ *       200:
+ *         description: Élève modifié avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Élève modifié avec succès"
+ *                 student:
+ *                   type: object
+ *       400:
+ *         description: Données invalides
+ *       401:
+ *         description: Token manquant ou invalide
+ *       403:
+ *         description: Accès réservé aux administrateurs et instructeurs
+ *       404:
+ *         description: Élève introuvable
+ *       500:
+ *         description: Erreur serveur
+ */
+router.put('/:uid', checkAuth, validate(schemas.updateStudentProfile), async (req, res) => {
+  try {
+    const { uid } = req.params;
+    const requesterUid = req.user.uid;
+
+    const requesterDoc = await admin.firestore().collection('users').doc(requesterUid).get();
+    const requesterData = requesterDoc.exists ? requesterDoc.data() : null;
+
+    if (!requesterData || (requesterData.role !== 'admin' && requesterData.role !== 'instructeur')) {
+      return res.status(403).json({ error: 'Accès réservé aux administrateurs et instructeurs' });
+    }
+
+    const studentRef = admin.firestore().collection('users').doc(uid);
+    const studentDoc = await studentRef.get();
+    if (!studentDoc.exists) {
+      return res.status(404).json({ error: 'Élève introuvable' });
+    }
+
+    const studentData = studentDoc.data();
+    if (studentData.role !== 'eleve') {
+      return res.status(400).json({ error: 'Cet utilisateur n\'est pas un élève' });
+    }
+
+    const updateData = {
+      ...req.body,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    await studentRef.update(updateData);
+
+    const updatedDoc = await studentRef.get();
+    const updatedData = updatedDoc.data();
+
+    return res.status(200).json({
+      message: 'Élève modifié avec succès',
+      student: {
+        uid: updatedDoc.id,
+        nom: updatedData.nom || updatedData.nomComplet || '',
+        nomComplet: updatedData.nomComplet || updatedData.nom || '',
+        email: updatedData.email || '',
+        role: updatedData.role || 'eleve',
+        statut: updatedData.statut || updatedData.status || '',
+        telephone: updatedData.telephone || updatedData.phone || '',
+        adresse: updatedData.adresse || updatedData.address || '',
+        licenseType: updatedData.licenseType || 'B'
+      }
+    });
+  } catch (error) {
+    console.error('Erreur modification élève:', error);
+    return res.status(500).json({ error: 'Erreur lors de la modification de l\'élève' });
   }
 });
 

@@ -31,6 +31,20 @@ try {
     console.error("Erreur chargement route student:", error.message);
 }
 
+try {
+    app.use('/api/student-profile', require('./routes/studentProfile'));
+    console.log("Route /api/student-profile chargee");
+} catch (error) {
+    console.error("Erreur chargement route student-profile:", error.message);
+}
+
+try {
+    app.use('/api/sessions', require('./routes/sessions'));
+    console.log("Route /api/sessions chargee");
+} catch (error) {
+    console.error("Erreur chargement route sessions:", error.message);
+}
+
 // ✅ 3. Configuration Swagger
 // ... (tes imports restent les mêmes)
 

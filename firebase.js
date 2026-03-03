@@ -1,31 +1,47 @@
 const admin = require("firebase-admin");
 
-if (!admin.apps.length) {
+function loadServiceAccount() {
+  if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+    return require("./serviceAccountKey.json");
+  }
+
   try {
-    // On lit soit la variable d'environnement, soit le fichier local (pour dev local)
-    const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
-      ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
-      : require('./serviceAccountKey.json');
+    const parsed = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      // On configure le bucket si la variable est présente
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || undefined
-    });
+    // Handle private key from env where newlines are escaped (\\n)
+    if (parsed.private_key && typeof parsed.private_key === "string") {
+      parsed.private_key = parsed.private_key.replace(/\\n/g, "\n");
+    }
 
-    console.log('✅ Firebase Admin initialisé');
+    return parsed;
   } catch (error) {
-    console.error('❌ Erreur Firebase:', error.message);
+    console.error("FIREBASE_SERVICE_ACCOUNT invalide, fallback vers serviceAccountKey.json:", error.message);
+    return require("./serviceAccountKey.json");
   }
 }
 
-// Récupération du bucket seulement si configuré
+if (!admin.apps.length) {
+  try {
+    const serviceAccount = loadServiceAccount();
+
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || undefined
+    });
+
+    console.log("Firebase Admin initialise");
+  } catch (error) {
+    console.error("Erreur Firebase:", error.message);
+  }
+}
+
 let bucket = null;
 if (process.env.FIREBASE_STORAGE_BUCKET) {
   try {
     bucket = admin.storage().bucket();
-  } catch (e) {
-    console.log("ℹ️ Storage désactivé (Bucket non configuré)");
+    console.log("Firebase Storage active");
+  } catch (error) {
+    console.log("Storage desactive (Bucket non configure)");
   }
 }
 

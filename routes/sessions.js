@@ -443,6 +443,97 @@ router.patch('/:sessionId/status', checkAuth, checkWritePermissions, validate(sc
 
 /**
  * @swagger
+ * /api/sessions/{sessionId}/presence:
+ *   post:
+ *     summary: Ajouter une présence
+ *     tags: [Sessions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: sessionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: ID de la session
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               notes:
+ *                 type: string
+ *                 example: "Élève présent et ponctuel"
+ *               actualStartTime:
+ *                 type: string
+ *                 example: "09:00"
+ *               actualEndTime:
+ *                 type: string
+ *                 example: "10:00"
+ *     responses:
+ *       200:
+ *         description: Présence ajoutée avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Présence ajoutée avec succès"
+ *                 sessionId:
+ *                   type: string
+ *                   example: "session123"
+ *                 status:
+ *                   type: string
+ *                   example: "présent"
+ *       400:
+ *         description: Données invalides
+ *       401:
+ *         description: Token manquant ou invalide
+ *       403:
+ *         description: Accès non autorisé
+ *       404:
+ *         description: Session introuvable
+ *       500:
+ *         description: Erreur serveur
+ */
+router.post('/:sessionId/presence', checkAuth, checkWritePermissions, validate(schemas.addPresence), async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { notes, actualStartTime, actualEndTime } = req.body || {};
+
+    const sessionRef = admin.firestore().collection('sessions').doc(sessionId);
+    const sessionDoc = await sessionRef.get();
+    if (!sessionDoc.exists) {
+      return res.status(404).json({ error: 'Session introuvable' });
+    }
+
+    await sessionRef.update({
+      status: 'présent',
+      notes: notes || null,
+      actualStartTime: actualStartTime || null,
+      actualEndTime: actualEndTime || null,
+      presenceMarkedAt: admin.firestore.FieldValue.serverTimestamp(),
+      presenceMarkedBy: req.user.uid,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    return res.status(200).json({
+      message: 'Présence ajoutée avec succès',
+      sessionId,
+      status: 'présent'
+    });
+  } catch (error) {
+    console.error('Erreur ajout présence:', error);
+    return res.status(500).json({ error: 'Erreur lors de l\'ajout de la présence' });
+  }
+});
+
+/**
+ * @swagger
  * /api/sessions/{sessionId}:
  *   get:
  *     summary: Récupérer les détails d'une session

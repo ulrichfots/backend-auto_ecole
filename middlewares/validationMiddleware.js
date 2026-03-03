@@ -81,6 +81,12 @@ const schemas = {
     actualEndTime: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).optional()
   }),
 
+  addPresence: Joi.object({
+    notes: Joi.string().max(500).optional(),
+    actualStartTime: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).optional(),
+    actualEndTime: Joi.string().pattern(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).optional()
+  }),
+
   // Schéma pour les filtres de sessions
   sessionFilters: Joi.object({
     date: Joi.string().isoDate().optional(),
