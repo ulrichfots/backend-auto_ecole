@@ -1,4 +1,4 @@
-require("dotenv").config();
+﻿require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const swaggerJsdoc = require("swagger-jsdoc");
@@ -22,6 +22,13 @@ try {
     console.log("✅ Route /api/auth chargée");
 } catch (error) {
     console.error("❌ Erreur chargement routes:", error.message);
+}
+
+try {
+    app.use('/api/student', require('./routes/student'));
+    console.log("Route /api/student chargee");
+} catch (error) {
+    console.error("Erreur chargement route student:", error.message);
 }
 
 // ✅ 3. Configuration Swagger

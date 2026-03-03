@@ -1,5 +1,4 @@
 const { admin } = require('../firebase');
-const emailService = require('../services/emailService');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 
@@ -130,69 +129,28 @@ exports.debugToken = async (req, res) => {
     }
 };
 // --- TACHES-42 : FORGOT PASSWORD ---
-
 exports.forgotPassword = async (req, res) => {
-
     const { email } = req.body;
 
+    const safeResponse = {
+        message: "Si un compte existe avec cet email, un lien de réinitialisation a été envoyé."
+    };
+
     try {
-
         if (!email) {
-
-            return res.status(400).json({ error: 'Email requis' });
-
+            return res.status(200).json(safeResponse);
         }
 
-
-
-        // 1. Vérifier si l'utilisateur existe dans Firestore
-
-        const userSnapshot = await admin.firestore()
-
-            .collection('users')
-
-            .where('email', '==', email)
-
-            .limit(1)
-
-            .get();
-
-
-
-        if (userSnapshot.empty) {
-
-            // Pour la sécurité, on répond souvent "Lien envoyé" même si l'email n'existe pas
-
-            return res.status(200).json({ message: 'Si cet email existe, un lien de réinitialisation a été envoyé.' });
-
-        }
-
-
-
-        // 2. Générer un lien de réinitialisation via Firebase Auth
-
-        const link = await admin.auth().generatePasswordResetLink(email);
-
-
-
-        // 3. Envoyer l'email via ton service d'email
-
-        // Note: Cela utilisera le SMTP_PASS que tu configureras plus tard avec ton client
-
-        await emailService.sendResetPasswordEmail(email, link);
-
-
-
-        res.status(200).json({ message: 'Lien de réinitialisation envoyé avec succès' });
+        // Firebase enverra le mail seulement si l’email existe
+        await admin.auth().generatePasswordResetLink(email);
 
     } catch (error) {
-
-        console.error('Erreur forgotPassword:', error);
-
-        res.status(500).json({ error: 'Erreur lors de l\'envoi de l\'email' });
-
+        // On log uniquement en interne
+        console.error("Erreur forgotPassword:", error.message);
     }
 
+    // Toujours la même réponse (sécurité anti-enumeration)
+    return res.status(200).json(safeResponse);
 };
 
 

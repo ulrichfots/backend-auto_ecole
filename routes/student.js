@@ -1,7 +1,84 @@
 const express = require('express');
 const router = express.Router();
 const { admin } = require('../firebase');
-const { checkAuth } = require('../middlewares/authMiddleware');
+const { checkAuth, checkAdmin } = require('../middlewares/authMiddleware');
+
+/**
+ * @swagger
+ * /api/student/all:
+ *   get:
+ *     summary: Retourner la liste complète des élèves
+ *     tags: [Élève]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Liste complète des élèves récupérée avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 students:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         example: "abc123"
+ *                       nom:
+ *                         type: string
+ *                         example: "Jean Dupont"
+ *                       email:
+ *                         type: string
+ *                         example: "jean.dupont@email.com"
+ *                       role:
+ *                         type: string
+ *                         example: "eleve"
+ *                       statut:
+ *                         type: string
+ *                         example: "actif"
+ *                       createdAt:
+ *                         type: string
+ *                         nullable: true
+ *                         example: "2026-03-03T09:30:00.000Z"
+ *       401:
+ *         description: Token manquant ou invalide
+ *       403:
+ *         description: Accès réservé aux administrateurs
+ *       500:
+ *         description: Erreur serveur
+ */
+router.get('/all', checkAuth, checkAdmin, async (req, res) => {
+  try {
+    const snapshot = await admin.firestore()
+      .collection('users')
+      .where('role', '==', 'eleve')
+      .get();
+
+    const students = snapshot.docs.map((doc) => {
+      const data = doc.data();
+      const createdAt = data.createdAt && typeof data.createdAt.toDate === 'function'
+        ? data.createdAt.toDate().toISOString()
+        : null;
+
+      return {
+        id: doc.id,
+        nom: data.nom || data.nomComplet || '',
+        email: data.email || '',
+        role: data.role || 'eleve',
+        statut: data.statut || data.status || '',
+        createdAt
+      };
+    });
+
+    return res.status(200).json({ students });
+  } catch (error) {
+    console.error('Erreur récupération liste des élèves:', error);
+    return res.status(500).json({ error: 'Erreur lors de la récupération de la liste des élèves' });
+  }
+});
 
 /**
  * @swagger
