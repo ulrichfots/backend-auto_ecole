@@ -45,6 +45,34 @@ try {
     console.error("Erreur chargement route sessions:", error.message);
 }
 
+try {
+    app.use('/api/news', require('./routes/news'));
+    console.log("Route /api/news chargee");
+} catch (error) {
+    console.error("Erreur chargement route news:", error.message);
+}
+
+try {
+    app.use('/api/comments', require('./routes/comments'));
+    console.log("Route /api/comments chargee");
+} catch (error) {
+    console.error("Erreur chargement route comments:", error.message);
+}
+
+try {
+    app.use('/api/dashboard', require('./routes/dashboard'));
+    console.log("Route /api/dashboard chargee");
+} catch (error) {
+    console.error("Erreur chargement route dashboard:", error.message);
+}
+
+try {
+    app.use('/api/users', require('./routes/users'));
+    console.log("Route /api/users chargee");
+} catch (error) {
+    console.error("Erreur chargement route users:", error.message);
+}
+
 // ✅ 3. Configuration Swagger
 // ... (tes imports restent les mêmes)
 

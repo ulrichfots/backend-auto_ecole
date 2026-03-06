@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { admin } = require('../firebase');
+const jwt = require('jsonwebtoken');
 const { checkAuth } = require('../middlewares/authMiddleware');
 const { validate, validateParams, schemas } = require('../middlewares/validationMiddleware');
+const JWT_SECRET = process.env.JWT_SECRET || 'votre_cle_secrete_ici';
 
 /**
  * @swagger
@@ -73,7 +75,12 @@ router.post('/', async (req, res) => {
     if (req.headers.authorization) {
       try {
         const token = req.headers.authorization.split(' ')[1];
-        const decodedToken = await admin.auth().verifyIdToken(token);
+        let decodedToken = null;
+        try {
+          decodedToken = jwt.verify(token, JWT_SECRET);
+        } catch (jwtError) {
+          decodedToken = await admin.auth().verifyIdToken(token);
+        }
         uid = decodedToken.uid;
         
         const userDoc = await admin.firestore().collection('users').doc(uid).get();
@@ -601,3 +608,4 @@ router.get('/:id/vote-status', checkAuth, async (req, res) => {
 });
 
 module.exports = router;
+

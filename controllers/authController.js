@@ -1,9 +1,26 @@
 const { admin } = require('../firebase');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const axios = require('axios');
 
 // Récupération du secret depuis le .env
 const JWT_SECRET = process.env.JWT_SECRET || 'votre_cle_secrete_ici';
+const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY || process.env.FIREBASE_API_KEY;
+
+async function verifyPasswordWithFirebase(email, password) {
+    if (!FIREBASE_WEB_API_KEY) {
+        const error = new Error('Configuration manquante: FIREBASE_WEB_API_KEY');
+        error.code = 'missing_api_key';
+        throw error;
+    }
+
+    const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_WEB_API_KEY}`;
+    await axios.post(url, {
+        email,
+        password,
+        returnSecureToken: true
+    });
+}
 
 // --- MIDDLEWARE : CHECK ADMIN ---
 exports.checkAdmin = async (req, res, next) => {
@@ -37,6 +54,23 @@ exports.login = async (req, res) => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
         if (!emailRegex.test(email)) {
             return res.status(400).json({ error: 'Format d\'email invalide' });
+        }
+
+        try {
+            await verifyPasswordWithFirebase(email, password);
+        } catch (authError) {
+            const firebaseMessage = authError?.response?.data?.error?.message;
+            if (authError.code === 'missing_api_key') {
+                return res.status(500).json({
+                    error: 'Configuration serveur incomplète',
+                    details: 'FIREBASE_WEB_API_KEY est requis pour valider le mot de passe'
+                });
+            }
+            if (firebaseMessage === 'INVALID_LOGIN_CREDENTIALS' || firebaseMessage === 'EMAIL_NOT_FOUND' || firebaseMessage === 'INVALID_PASSWORD') {
+                return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
+            }
+            console.error('Erreur validation mot de passe Firebase:', authError?.response?.data || authError.message);
+            return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
         }
 
         const usersSnapshot = await admin.firestore()

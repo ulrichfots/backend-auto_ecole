@@ -11,14 +11,14 @@ const checkReadPermissions = async (req, res, next) => {
 };
 
 const checkWritePermissions = async (req, res, next) => {
-  // Seuls les admins et instructeurs peuvent écrire
-  if (!['admin', 'instructeur'].includes(req.user.role)) {
+  // Seuls les admins peuvent écrire
+  if (req.user.role !== 'admin') {
     return res.status(403).json({ 
       error: 'Accès non autorisé',
-      message: 'Seuls les administrateurs et instructeurs peuvent modifier les séances',
+      message: 'Seuls les administrateurs peuvent modifier les séances',
       debug: {
         userRole: req.user.role,
-        requiredRoles: ['admin', 'instructeur'],
+        requiredRoles: ['admin'],
         action: req.method
       }
     });
@@ -337,7 +337,7 @@ router.post('/', checkAuth, checkWritePermissions, validate(schemas.createSessio
     const userDoc = await admin.firestore().collection('users').doc(req.user.uid).get();
     const userData = userDoc.data();
     
-    if (!userData || (userData.role !== 'admin' && userData.role !== 'instructeur')) {
+    if (!userData || userData.role !== 'admin') {
       return res.status(403).json({ error: 'Accès non autorisé' });
     }
 
@@ -412,7 +412,7 @@ router.patch('/:sessionId/status', checkAuth, checkWritePermissions, validate(sc
     const userDoc = await admin.firestore().collection('users').doc(req.user.uid).get();
     const userData = userDoc.data();
     
-    if (!userData || (userData.role !== 'admin' && userData.role !== 'instructeur')) {
+    if (!userData || userData.role !== 'admin') {
       return res.status(403).json({ error: 'Accès non autorisé' });
     }
 
@@ -642,7 +642,7 @@ router.post('/export/pdf', checkAuth, async (req, res) => {
     const userDoc = await admin.firestore().collection('users').doc(req.user.uid).get();
     const userData = userDoc.data();
     
-    if (!userData || (userData.role !== 'admin' && userData.role !== 'instructeur')) {
+    if (!userData || userData.role !== 'admin') {
       return res.status(403).json({ error: 'Accès non autorisé' });
     }
 
@@ -1101,7 +1101,7 @@ router.put('/:id', checkAuth, checkWritePermissions, async (req, res) => {
     const userDoc = await admin.firestore().collection('users').doc(req.user.uid).get();
     const userData = userDoc.data();
     
-    if (!userData || (userData.role !== 'admin' && userData.role !== 'instructeur')) {
+    if (!userData || userData.role !== 'admin') {
       return res.status(403).json({ error: 'Accès non autorisé' });
     }
 
@@ -1182,7 +1182,7 @@ router.delete('/:id', checkAuth, checkWritePermissions, async (req, res) => {
     const userDoc = await admin.firestore().collection('users').doc(req.user.uid).get();
     const userData = userDoc.data();
     
-    if (!userData || (userData.role !== 'admin' && userData.role !== 'instructeur')) {
+    if (!userData || userData.role !== 'admin') {
       return res.status(403).json({ error: 'Accès non autorisé' });
     }
 
@@ -1244,7 +1244,7 @@ router.post('/export/excel', checkAuth, async (req, res) => {
     const userDoc = await admin.firestore().collection('users').doc(req.user.uid).get();
     const userData = userDoc.data();
     
-    if (!userData || (userData.role !== 'admin' && userData.role !== 'instructeur')) {
+    if (!userData || userData.role !== 'admin') {
       return res.status(403).json({ error: 'Accès non autorisé' });
     }
 
@@ -1386,3 +1386,5 @@ router.get('/me', checkAuth, async (req, res) => {
 });
 
 module.exports = router;
+
+

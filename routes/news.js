@@ -47,14 +47,14 @@ const checkReadPermissions = async (req, res, next) => {
 };
 
 const checkWritePermissions = async (req, res, next) => {
-  // Seuls les admins et instructeurs peuvent écrire
-  if (!['admin', 'instructeur'].includes(req.user.role)) {
+  // Seuls les admins peuvent écrire
+  if (req.user.role !== 'admin') {
     return res.status(403).json({ 
       error: 'Accès non autorisé',
-      message: 'Seuls les administrateurs et instructeurs peuvent modifier les actualités',
+      message: 'Seuls les administrateurs peuvent modifier les actualités',
       debug: {
         userRole: req.user.role,
-        requiredRoles: ['admin', 'instructeur'],
+        requiredRoles: ['admin'],
         action: req.method
       }
     });
@@ -856,3 +856,6 @@ router.post('/:id/view', async (req, res) => {
 });
 
 module.exports = router;
+
+
+

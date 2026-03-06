@@ -45,4 +45,27 @@ if (process.env.FIREBASE_STORAGE_BUCKET) {
   }
 }
 
-module.exports = { admin, bucket };
+async function uploadImageToStorage(file) {
+  if (!bucket) {
+    throw new Error("Firebase Storage non configure");
+  }
+  if (!file || !file.buffer) {
+    throw new Error("Fichier image invalide");
+  }
+
+  const safeName = (file.originalname || "image").replace(/[^\w.\-]/g, "_");
+  const fileName = `news/${Date.now()}_${safeName}`;
+  const fileUpload = bucket.file(fileName);
+
+  await fileUpload.save(file.buffer, {
+    metadata: {
+      contentType: file.mimetype || "application/octet-stream",
+    },
+    resumable: false,
+  });
+
+  await fileUpload.makePublic();
+  return `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+}
+
+module.exports = { admin, bucket, uploadImageToStorage };

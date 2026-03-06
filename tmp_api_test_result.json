@@ -1,0 +1,171 @@
+{
+    "summary":  {
+                    "total":  27,
+                    "passed":  4,
+                    "failed":  23
+                },
+    "tests":  [
+                  {
+                      "test":  "login_admin",
+                      "expected":  200,
+                      "status":  200,
+                      "pass":  true
+                  },
+                  {
+                      "test":  "login_eleve",
+                      "expected":  200,
+                      "status":  200,
+                      "pass":  true
+                  },
+                  {
+                      "test":  "login_instructeur",
+                      "expected":  200,
+                      "status":  200,
+                      "pass":  true
+                  },
+                  {
+                      "test":  "me_admin",
+                      "expected":  200,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "me_eleve",
+                      "expected":  200,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "me_instructeur",
+                      "expected":  200,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "dashboard_admin_only_admin",
+                      "expected":  200,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "dashboard_denied_eleve",
+                      "expected":  403,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "dashboard_denied_instructeur",
+                      "expected":  403,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "admin_create_student",
+                      "expected":  201,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "admin_create_instructor",
+                      "expected":  201,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "admin_list_students",
+                      "expected":  200,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "admin_list_instructors",
+                      "expected":  200,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "admin_get_student_detail",
+                      "expected":  200,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "admin_update_student",
+                      "expected":  200,
+                      "status":  404,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "eleve_cannot_list_students",
+                      "expected":  403,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "eleve_can_read_news",
+                      "expected":  200,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "eleve_cannot_create_news",
+                      "expected":  403,
+                      "status":  0,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "admin_create_news",
+                      "expected":  201,
+                      "status":  0,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "admin_create_session",
+                      "expected":  200,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "eleve_cannot_create_session",
+                      "expected":  403,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "eleve_can_read_sessions",
+                      "expected":  200,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "eleve_comment",
+                      "expected":  200,
+                      "status":  400,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "forgot_password",
+                      "expected":  200,
+                      "status":  200,
+                      "pass":  true
+                  },
+                  {
+                      "test":  "logout_eleve",
+                      "expected":  200,
+                      "status":  401,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "admin_delete_student",
+                      "expected":  200,
+                      "status":  404,
+                      "pass":  false
+                  },
+                  {
+                      "test":  "admin_delete_instructor",
+                      "expected":  200,
+                      "status":  404,
+                      "pass":  false
+                  }
+              ]
+}
