@@ -263,8 +263,7 @@ router.post('/', async (req, res) => {
       dateDebut,
       heurePreferee,
       formation,
-      role,
-      password
+      role
     } = req.body;
 
     // Validation des données requises
@@ -275,14 +274,6 @@ router.post('/', async (req, res) => {
       return res.status(400).json({
         error: 'Données d\'inscription invalides',
         details: missingFields.map(field => `Le champ '${field}' est requis`)
-      });
-    }
-
-    // Validation du mot de passe si fourni
-    if (password && password.length < 6) {
-      return res.status(400).json({
-        error: 'Mot de passe invalide',
-        details: 'Le mot de passe doit contenir au moins 6 caractères'
       });
     }
 
@@ -372,84 +363,30 @@ router.post('/', async (req, res) => {
     registrations.push(registrationData);
     console.log('Nouvelle inscription enregistrée:', registrationId);
 
-    // Créer un compte utilisateur avec le rôle spécifié
-    let userCreated = false;
-    let userData = null;
-    let firebaseUser = null;
-    
-    try {
-      // Vérifier si l'utilisateur existe déjà
-      const existingUserQuery = await admin.firestore()
-        .collection('users')
-        .where('email', '==', email)
-        .limit(1)
-        .get();
+    // Workflow métier: cette route crée uniquement une demande de rendez-vous.
+    // Le compte élève sera créé plus tard par l'admin après validation.
+    const userCreated = false;
+    const userData = null;
+    const firebaseUser = null;
 
-      if (existingUserQuery.empty) {
-        // Créer un utilisateur Firebase Auth avec mot de passe
-        if (password) {
-          try {
-            firebaseUser = await admin.auth().createUser({
-              email: email,
-              password: password,
-              displayName: nomComplet,
-              emailVerified: false
-            });
-            console.log('Utilisateur Firebase Auth créé:', firebaseUser.uid);
-          } catch (authError) {
-            console.error('Erreur création utilisateur Firebase Auth:', authError);
-            // Continuer sans créer l'utilisateur Auth si échec
-          }
-        }
-
-        // Créer le document utilisateur dans Firestore
-        const newUserRef = admin.firestore().collection('users').doc();
-        
-        userData = {
-          uid: newUserRef.id,
-          firebaseUid: firebaseUser ? firebaseUser.uid : null,
-          email: email,
-          nomComplet: nomComplet,
-          telephone: telephone,
-          adresse: adresse,
-          dateNaissance: dateNaissance,
-          role: registrationData.role,
-          statut: 'actif',
-          isFirstLogin: true,
-          theoreticalHours: 0,
-          practicalHours: 0,
-          licenseType: 'B',
-          formation: formation,
-          registrationId: registrationId,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp()
-        };
-
-        await newUserRef.set(userData);
-        userCreated = true;
-        console.log('Compte utilisateur créé avec le rôle:', registrationData.role);
-      } else if (existingUserQuery.empty && !password) {
-        console.log('Pas de mot de passe fourni - inscription sans création de compte');
-      } else {
-        console.log('Utilisateur existe déjà avec cet email');
-        const existingUser = existingUserQuery.docs[0];
-        userData = existingUser.data();
-        userData.uid = existingUser.id;
-      }
-    } catch (userError) {
-      console.error('Erreur lors de la création du compte utilisateur:', userError);
-      // L'inscription continue même si la création du compte échoue
-    }
-
-    // Envoi des emails
+    // Envoi des emails (non bloquant: l'inscription reste valide meme si un email echoue)
     const emailsSent = {
       student: { success: false },
       admin: { success: false }
     };
 
-    // Emails désactivés temporairement (problème de timeout SMTP)
-    emailsSent.student = { success: false, error: 'Emails désactivés temporairement' };
-    emailsSent.admin = { success: false, error: 'Emails désactivés temporairement' };
+    const [studentEmailResult, adminEmailResult] = await Promise.allSettled([
+      emailService.sendConfirmationToStudent(registrationData),
+      emailService.sendNotificationToAdmin(registrationData)
+    ]);
+
+    emailsSent.student = studentEmailResult.status === 'fulfilled'
+      ? studentEmailResult.value
+      : { success: false, error: studentEmailResult.reason?.message || 'Erreur envoi email etudiant' };
+
+    emailsSent.admin = adminEmailResult.status === 'fulfilled'
+      ? adminEmailResult.value
+      : { success: false, error: adminEmailResult.reason?.message || 'Erreur envoi email admin' };
 
     // Réponse de succès
     res.status(201).json({
@@ -474,7 +411,8 @@ router.post('/', async (req, res) => {
         role: userData?.role || null,
         statut: userData?.statut || null,
         isFirstLogin: userData?.isFirstLogin || false,
-        emailVerified: firebaseUser?.emailVerified || false
+        emailVerified: firebaseUser?.emailVerified || false,
+        note: 'Compte non créé automatiquement. Création par admin après validation du rendez-vous.'
       }
     });
 
@@ -1434,3 +1372,5 @@ router.get('/available-slots', async (req, res) => {
 });
 
 module.exports = router;
+
+

@@ -73,6 +73,13 @@ try {
     console.error("Erreur chargement route users:", error.message);
 }
 
+try {
+    app.use('/api/registration', require('./routes/registration'));
+    console.log("Route /api/registration chargee");
+} catch (error) {
+    console.error("Erreur chargement route registration:", error.message);
+}
+
 // ✅ 3. Configuration Swagger
 // ... (tes imports restent les mêmes)
 
