@@ -359,7 +359,8 @@ router.post('/', async (req, res) => {
       role: role || 'eleve' // Rôle par défaut: eleve
     };
 
-    // Sauvegarde de l'inscription (simulation - remplacer par Firebase)
+    // Sauvegarde de l'inscription en base (Firestore) + cache mémoire
+    await admin.firestore().collection('registrations').doc(registrationId).set(registrationData);
     registrations.push(registrationData);
     console.log('Nouvelle inscription enregistrée:', registrationId);
 
@@ -369,24 +370,11 @@ router.post('/', async (req, res) => {
     const userData = null;
     const firebaseUser = null;
 
-    // Envoi des emails (non bloquant: l'inscription reste valide meme si un email echoue)
+    // Notifications en mode dashboard uniquement (pas d'envoi email)
     const emailsSent = {
-      student: { success: false },
-      admin: { success: false }
+      student: { success: false, error: 'Notification email desactivee (dashboard uniquement)' },
+      admin: { success: false, error: 'Notification email desactivee (dashboard uniquement)' }
     };
-
-    const [studentEmailResult, adminEmailResult] = await Promise.allSettled([
-      emailService.sendConfirmationToStudent(registrationData),
-      emailService.sendNotificationToAdmin(registrationData)
-    ]);
-
-    emailsSent.student = studentEmailResult.status === 'fulfilled'
-      ? studentEmailResult.value
-      : { success: false, error: studentEmailResult.reason?.message || 'Erreur envoi email etudiant' };
-
-    emailsSent.admin = adminEmailResult.status === 'fulfilled'
-      ? adminEmailResult.value
-      : { success: false, error: adminEmailResult.reason?.message || 'Erreur envoi email admin' };
 
     // Réponse de succès
     res.status(201).json({
@@ -478,10 +466,13 @@ router.post('/', async (req, res) => {
  *                         format: date-time
  *                         example: "2024-01-15T10:30:00Z"
  */
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     // Retourner les inscriptions sans les données sensibles
-    const publicRegistrations = registrations.map(reg => ({
+    const registrationsSnapshot = await admin.firestore().collection('registrations').get();
+    const allRegistrations = registrationsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    const publicRegistrations = allRegistrations.map(reg => ({
       id: reg.id,
       nomComplet: reg.nomComplet,
       email: reg.email,
@@ -496,7 +487,7 @@ router.get('/', (req, res) => {
     res.json({
       success: true,
       registrations: publicRegistrations,
-      total: registrations.length
+      total: allRegistrations.length
     });
   } catch (error) {
     console.error('Erreur lors de la récupération des inscriptions:', error);
@@ -544,10 +535,15 @@ router.get('/', (req, res) => {
  *             example:
  *               error: "Inscription non trouvée"
  */
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const registration = registrations.find(reg => reg.id === id);
+    if (id === 'with-roles' || id === 'create-user' || id === 'check-availability' || id === 'available-slots') {
+      return next();
+    }
+
+    const registrationDoc = await admin.firestore().collection('registrations').doc(id).get();
+    const registration = registrationDoc.exists ? { id: registrationDoc.id, ...registrationDoc.data() } : null;
 
     if (!registration) {
       return res.status(404).json({
@@ -655,7 +651,10 @@ router.get('/with-roles', checkAuth, async (req, res) => {
     });
 
     // Filtrer les inscriptions
-    let filteredRegistrations = registrations;
+    const registrationsSnapshot = await admin.firestore().collection('registrations').get();
+    const allRegistrations = registrationsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+    let filteredRegistrations = allRegistrations;
 
     // Appliquer les filtres
     if (status !== 'tous') {
@@ -689,7 +688,7 @@ router.get('/with-roles', checkAuth, async (req, res) => {
     res.status(200).json({
       success: true,
       registrations: enrichedRegistrations,
-      total: registrations.length,
+      total: allRegistrations.length,
       filteredCount: filteredRegistrations.length,
       filters: {
         status,
@@ -781,7 +780,9 @@ router.get('/:id/user-info', checkAuth, async (req, res) => {
     }
 
     const { id } = req.params;
-    const registration = registrations.find(reg => reg.id === id);
+
+    const registrationDoc = await admin.firestore().collection('registrations').doc(id).get();
+    const registration = registrationDoc.exists ? { id: registrationDoc.id, ...registrationDoc.data() } : null;
 
     if (!registration) {
       return res.status(404).json({
@@ -1372,5 +1373,6 @@ router.get('/available-slots', async (req, res) => {
 });
 
 module.exports = router;
+
 
 
