@@ -6,6 +6,10 @@ const { checkAuth } = require('../middlewares/authMiddleware');
 const { validate, validateParams, schemas } = require('../middlewares/validationMiddleware');
 const JWT_SECRET = process.env.JWT_SECRET || 'votre_cle_secrete_ici';
 
+// ============================================================
+// ✅ ROUTES STATIQUES EN PREMIER
+// ============================================================
+
 /**
  * @swagger
  * /api/comments:
@@ -31,36 +35,20 @@ const JWT_SECRET = process.env.JWT_SECRET || 'votre_cle_secrete_ici';
  *                 minLength: 2
  *                 maxLength: 50
  *                 example: "Marie Dubois"
- *                 description: "Nom de l'utilisateur (requis si pas authentifié)"
  *               email:
  *                 type: string
  *                 format: email
  *                 example: "marie.dubois@example.com"
- *                 description: "Email de l'utilisateur (requis si pas authentifié)"
  *               parentId:
  *                 type: string
  *                 example: "abc123def456"
- *                 description: "ID du commentaire parent pour une réponse"
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Commentaire ajouté avec succès
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 id:
- *                   type: string
- *                   example: "abc123def456"
- *                 message:
- *                   type: string
- *                   example: "Commentaire enregistré"
  *       400:
  *         description: Données invalides
- *       401:
- *         description: Token manquant ou invalide (si pas de nom/email fourni)
  *       500:
  *         description: Erreur serveur
  */
@@ -71,7 +59,6 @@ router.post('/', async (req, res) => {
   let userEmail = email;
 
   try {
-    // Si l'utilisateur est authentifié, utiliser ses informations
     if (req.headers.authorization) {
       try {
         const token = req.headers.authorization.split(' ')[1];
@@ -82,25 +69,22 @@ router.post('/', async (req, res) => {
           decodedToken = await admin.auth().verifyIdToken(token);
         }
         uid = decodedToken.uid;
-        
+
         const userDoc = await admin.firestore().collection('users').doc(uid).get();
         const userData = userDoc.data();
         userName = userData?.nom || userData?.name || "Utilisateur";
         userEmail = userData?.email || decodedToken.email;
       } catch (authError) {
-        // Si le token est invalide, continuer comme utilisateur anonyme
         console.log('Token invalide, utilisation comme utilisateur anonyme');
       }
     }
 
-    // Si pas authentifié et pas de nom/email fourni
     if (!uid && (!name || !email)) {
-      return res.status(400).json({ 
-        error: 'Nom et email requis pour les commentaires anonymes' 
+      return res.status(400).json({
+        error: 'Nom et email requis pour les commentaires anonymes'
       });
     }
 
-    // Vérifier si c'est une réponse à un commentaire
     let parentCommentId = null;
     if (parentId) {
       const parentDoc = await admin.firestore().collection('comments').doc(parentId).get();
@@ -110,8 +94,9 @@ router.post('/', async (req, res) => {
       parentCommentId = parentId;
     }
 
-    // Générer les initiales pour l'avatar
-    const initials = userName ? userName.split(' ').map(n => n[0]).join('').toUpperCase() : 'U';
+    const initials = userName
+      ? userName.split(' ').map(n => n[0]).join('').toUpperCase()
+      : 'U';
 
     const commentData = {
       uid,
@@ -127,10 +112,10 @@ router.post('/', async (req, res) => {
 
     const commentRef = await admin.firestore().collection('comments').add(commentData);
 
-    res.status(200).json({ 
-      id: commentRef.id, 
+    res.status(200).json({
+      id: commentRef.id,
       message: 'Commentaire enregistré',
-      initials 
+      initials
     });
   } catch (err) {
     console.error(err);
@@ -151,80 +136,19 @@ router.post('/', async (req, res) => {
  *           type: string
  *           enum: [recent, oldest, popular]
  *           default: recent
- *         description: Type de tri
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           default: 50
- *         description: Nombre maximum de commentaires à retourner
  *       - in: query
  *         name: includeReplies
  *         schema:
  *           type: boolean
  *           default: true
- *         description: Inclure les réponses aux commentaires
  *     responses:
  *       200:
  *         description: Liste des commentaires
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 comments:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: string
- *                       uid:
- *                         type: string
- *                       name:
- *                         type: string
- *                       email:
- *                         type: string
- *                       comment:
- *                         type: string
- *                       likes:
- *                         type: number
- *                       dislikes:
- *                         type: number
- *                       parentId:
- *                         type: string
- *                         nullable: true
- *                       initials:
- *                         type: string
- *                       createdAt:
- *                         type: string
- *                         format: date-time
- *                       replies:
- *                         type: array
- *                         items:
- *                           type: object
- *                           properties:
- *                             id:
- *                               type: string
- *                             name:
- *                               type: string
- *                             email:
- *                               type: string
- *                             comment:
- *                               type: string
- *                             likes:
- *                               type: number
- *                             dislikes:
- *                               type: number
- *                             initials:
- *                               type: string
- *                             createdAt:
- *                               type: string
- *                               format: date-time
- *                 totalCount:
- *                   type: number
- *                 parentCommentsCount:
- *                   type: number
  *       500:
  *         description: Erreur serveur
  */
@@ -245,17 +169,13 @@ router.get('/', async (req, res) => {
         orderField = 'likes';
         orderDirection = 'desc';
         break;
-      case 'recent':
       default:
         orderField = 'createdAt';
         orderDirection = 'desc';
-        break;
     }
 
-    // Récupérer tous les commentaires
     let snapshot;
     if (sort === 'popular') {
-      // Pour le tri par popularité, on récupère d'abord par date puis on trie par likes
       snapshot = await admin.firestore().collection('comments')
         .orderBy('createdAt', 'desc')
         .get();
@@ -266,26 +186,31 @@ router.get('/', async (req, res) => {
         .get();
     }
 
-    let comments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // ✅ CORRECTION : conversion des Timestamps Firestore en dates lisibles
+    let comments = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : data.createdAt
+      };
+    });
 
-    // Si tri par popularité, trier manuellement
     if (sort === 'popular') {
       comments = comments
         .sort((a, b) => (b.likes || 0) - (a.likes || 0))
         .slice(0, limitNum);
     }
 
-    // Séparer les commentaires principaux des réponses
     const parentComments = comments.filter(comment => !comment.parentId);
     const replies = comments.filter(comment => comment.parentId);
 
-    // Si on doit inclure les réponses, les associer aux commentaires parents
     if (includeRepliesBool) {
       const commentsWithReplies = parentComments.map(parentComment => {
         const commentReplies = replies
           .filter(reply => reply.parentId === parentComment.id)
-          .sort((a, b) => new Date(a.createdAt?.toDate?.() || a.createdAt) - new Date(b.createdAt?.toDate?.() || b.createdAt));
-        
+          .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
         return {
           ...parentComment,
           replies: commentReplies
@@ -310,6 +235,127 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ============================================================
+// ✅ ROUTES DYNAMIQUES AVEC SOUS-ROUTES EN PREMIER (/:id/xxx)
+// ============================================================
+
+/**
+ * @swagger
+ * /api/comments/{id}/replies:
+ *   get:
+ *     summary: Récupérer les réponses d'un commentaire
+ *     tags: [Commentaires]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: sort
+ *         schema:
+ *           type: string
+ *           enum: [recent, oldest, popular]
+ *           default: recent
+ *     responses:
+ *       200:
+ *         description: Réponses récupérées avec succès
+ *       404:
+ *         description: Commentaire parent introuvable
+ *       500:
+ *         description: Erreur serveur
+ */
+router.get('/:id/replies', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { sort = 'recent' } = req.query;
+
+    const parentDoc = await admin.firestore().collection('comments').doc(id).get();
+    if (!parentDoc.exists) {
+      return res.status(404).json({ error: 'Commentaire parent introuvable' });
+    }
+
+    let snapshot = await admin.firestore().collection('comments')
+      .where('parentId', '==', id)
+      .orderBy('createdAt', sort === 'oldest' ? 'asc' : 'desc')
+      .get();
+
+    // ✅ CORRECTION : conversion des Timestamps
+    let replies = snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : data.createdAt
+      };
+    });
+
+    if (sort === 'popular') {
+      replies = replies.sort((a, b) => (b.likes || 0) - (a.likes || 0));
+    }
+
+    res.status(200).json({ replies, count: replies.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur récupération des réponses' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/comments/{id}/vote-status:
+ *   get:
+ *     summary: Récupérer le statut de vote d'un utilisateur sur un commentaire
+ *     tags: [Commentaires]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Statut de vote récupéré
+ *       401:
+ *         description: Token manquant ou invalide
+ *       404:
+ *         description: Commentaire non trouvé
+ *       500:
+ *         description: Erreur serveur
+ */
+router.get('/:id/vote-status', checkAuth, async (req, res) => {
+  try {
+    const commentId = req.params.id;
+    const uid = req.user.uid;
+
+    console.log(`🔍 Statut de vote pour commentaire ${commentId} par utilisateur ${uid}`);
+
+    const commentRef = admin.firestore().collection('comments').doc(commentId);
+    const voteRef = commentRef.collection('votes').doc(uid);
+    const voteSnap = await voteRef.get();
+
+    if (!voteSnap.exists) {
+      return res.status(200).json({ hasVoted: false, voteType: null, canVote: true });
+    }
+
+    const voteData = voteSnap.data();
+    res.status(200).json({ hasVoted: true, voteType: voteData.type, canVote: true });
+
+  } catch (err) {
+    console.error('❌ Erreur récupération statut vote:', err);
+    res.status(500).json({
+      error: 'Erreur serveur',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+// ============================================================
+// ✅ ROUTES DYNAMIQUES SIMPLES EN DERNIER (/:id)
+// ============================================================
+
 /**
  * @swagger
  * /api/comments/{id}:
@@ -324,7 +370,6 @@ router.get('/', async (req, res) => {
  *         required: true
  *         schema:
  *           type: string
- *         description: ID du commentaire
  *     requestBody:
  *       required: true
  *       content:
@@ -341,114 +386,13 @@ router.get('/', async (req, res) => {
  *     responses:
  *       200:
  *         description: Vote enregistré avec succès
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: "✅ like enregistré"
  *       400:
  *         description: Type de vote invalide
  *       401:
  *         description: Token manquant ou invalide
- *       403:
- *         description: Déjà voté pour ce commentaire
  *       500:
  *         description: Erreur serveur
  */
-/**
- * @swagger
- * /api/comments/{id}/replies:
- *   get:
- *     summary: Récupérer les réponses d'un commentaire
- *     tags: [Commentaires]
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID du commentaire parent
- *       - in: query
- *         name: sort
- *         schema:
- *           type: string
- *           enum: [recent, oldest, popular]
- *           default: recent
- *         description: Type de tri des réponses
- *     responses:
- *       200:
- *         description: Réponses récupérées avec succès
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 replies:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: string
- *                       name:
- *                         type: string
- *                       email:
- *                         type: string
- *                       comment:
- *                         type: string
- *                       likes:
- *                         type: number
- *                       dislikes:
- *                         type: number
- *                       initials:
- *                         type: string
- *                       createdAt:
- *                         type: string
- *                         format: date-time
- *                 count:
- *                   type: number
- *       404:
- *         description: Commentaire parent introuvable
- *       500:
- *         description: Erreur serveur
- */
-router.get('/:id/replies', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { sort = 'recent' } = req.query;
-
-    // Vérifier que le commentaire parent existe
-    const parentDoc = await admin.firestore().collection('comments').doc(id).get();
-    if (!parentDoc.exists) {
-      return res.status(404).json({ error: 'Commentaire parent introuvable' });
-    }
-
-    // Récupérer les réponses
-    let snapshot = await admin.firestore().collection('comments')
-      .where('parentId', '==', id)
-      .orderBy('createdAt', sort === 'oldest' ? 'asc' : 'desc')
-      .get();
-
-    let replies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-    // Si tri par popularité
-    if (sort === 'popular') {
-      replies = replies.sort((a, b) => (b.likes || 0) - (a.likes || 0));
-    }
-
-    res.status(200).json({
-      replies,
-      count: replies.length
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Erreur récupération des réponses' });
-  }
-});
-
 router.patch('/:id', checkAuth, validate(schemas.vote), async (req, res) => {
   const { type } = req.body;
   const commentId = req.params.id;
@@ -469,36 +413,32 @@ router.patch('/:id', checkAuth, validate(schemas.vote), async (req, res) => {
       console.log(`🆕 Nouveau vote: ${type}`);
     }
 
-    // Si l'utilisateur vote la même chose, annuler le vote
+    // Annuler le vote si même type
     if (previousVote === type) {
-      // Annuler le vote
       await commentRef.update({
         [type === 'like' ? 'likes' : 'dislikes']: admin.firestore.FieldValue.increment(-1),
       });
       await voteRef.delete();
-      
-      return res.status(200).json({ 
+
+      return res.status(200).json({
         message: `🗑️ Vote ${type} annulé`,
         action: 'removed',
         previousVote: type
       });
     }
 
-    // Si l'utilisateur change de vote
+    // Changer de vote
     if (previousVote && previousVote !== type) {
-      // Décrémenter l'ancien vote et incrémenter le nouveau
       await commentRef.update({
         [previousVote === 'like' ? 'likes' : 'dislikes']: admin.firestore.FieldValue.increment(-1),
         [type === 'like' ? 'likes' : 'dislikes']: admin.firestore.FieldValue.increment(1),
       });
-      
-      // Mettre à jour le vote
       await voteRef.set({
         type,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
       });
 
-      return res.status(200).json({ 
+      return res.status(200).json({
         message: `🔄 Vote changé: ${previousVote} → ${type}`,
         action: 'changed',
         previousVote,
@@ -506,101 +446,24 @@ router.patch('/:id', checkAuth, validate(schemas.vote), async (req, res) => {
       });
     }
 
-    // Nouveau vote (pas de vote précédent)
+    // Nouveau vote
     const field = type === 'like' ? 'likes' : 'dislikes';
     await commentRef.update({
       [field]: admin.firestore.FieldValue.increment(1),
     });
-
-    // Enregistrement du vote
     await voteRef.set({
       type,
       timestamp: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    res.status(200).json({ 
+    res.status(200).json({
       message: `✅ ${type} enregistré`,
       action: 'added',
       newVote: type
     });
   } catch (err) {
     console.error('❌ Erreur vote commentaire:', err);
-    res.status(500).json({ 
-      error: 'Erreur serveur',
-      details: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
-  }
-});
-
-/**
- * @swagger
- * /api/comments/{id}/vote-status:
- *   get:
- *     summary: Récupérer le statut de vote d'un utilisateur sur un commentaire
- *     tags: [Commentaires]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: string
- *         description: ID du commentaire
- *     responses:
- *       200:
- *         description: Statut de vote récupéré
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 hasVoted:
- *                   type: boolean
- *                   example: true
- *                 voteType:
- *                   type: string
- *                   enum: [like, dislike]
- *                   example: "like"
- *                 canVote:
- *                   type: boolean
- *                   example: true
- *       401:
- *         description: Token manquant ou invalide
- *       404:
- *         description: Commentaire non trouvé
- *       500:
- *         description: Erreur serveur
- */
-router.get('/:id/vote-status', checkAuth, async (req, res) => {
-  try {
-    const commentId = req.params.id;
-    const uid = req.user.uid;
-
-    console.log(`🔍 Récupération statut de vote pour le commentaire ${commentId} par l'utilisateur ${uid}`);
-
-    const commentRef = admin.firestore().collection('comments').doc(commentId);
-    const voteRef = commentRef.collection('votes').doc(uid);
-    const voteSnap = await voteRef.get();
-
-    if (!voteSnap.exists) {
-      return res.status(200).json({
-        hasVoted: false,
-        voteType: null,
-        canVote: true
-      });
-    }
-
-    const voteData = voteSnap.data();
-    res.status(200).json({
-      hasVoted: true,
-      voteType: voteData.type,
-      canVote: true // L'utilisateur peut toujours changer de vote
-    });
-
-  } catch (err) {
-    console.error('❌ Erreur récupération statut vote:', err);
-    res.status(500).json({ 
+    res.status(500).json({
       error: 'Erreur serveur',
       details: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
@@ -608,4 +471,3 @@ router.get('/:id/vote-status', checkAuth, async (req, res) => {
 });
 
 module.exports = router;
-
