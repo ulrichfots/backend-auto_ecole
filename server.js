@@ -79,6 +79,12 @@ try {
 } catch (error) {
     console.error("Erreur chargement route registration:", error.message);
 }
+try {
+    app.use('/api/seed', require('./routes/seed'));
+    console.log("Route /api/seed chargee");
+} catch (error) {
+    console.error("Erreur chargement route seed:", error.message);
+}
 
 // ✅ 3. Configuration Swagger
 // ... (tes imports restent les mêmes)
