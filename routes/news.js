@@ -22,31 +22,15 @@ const upload = multer({
   }
 });
 
-// Middleware pour vérifier si l'utilisateur est admin ou instructeur
-const checkAdminOrInstructor = async (req, res, next) => {
-  if (!['admin', 'instructeur'].includes(req.user.role)) {
-    return res.status(403).json({ 
-      error: 'Accès non autorisé',
-      message: 'Seuls les administrateurs et instructeurs peuvent accéder à cette fonctionnalité',
-      debug: {
-        userRole: req.user.role,
-        requiredRoles: ['admin', 'instructeur']
-      }
-    });
-  }
-  next();
-};
-
-// Middleware pour vérifier les permissions de lecture
+// Middleware pour vérifier les permissions de lecture (tous les rôles connectés)
 const checkReadPermissions = async (req, res, next) => {
-  // Tous les utilisateurs authentifiés peuvent lire
   next();
 };
 
 // Middleware pour vérifier les permissions d'écriture (admin seulement)
 const checkWritePermissions = async (req, res, next) => {
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ 
+    return res.status(403).json({
       error: 'Accès non autorisé',
       message: 'Seuls les administrateurs peuvent modifier les actualités',
       debug: {
@@ -68,7 +52,6 @@ const checkWritePermissions = async (req, res, next) => {
  * /api/news/stats:
  *   get:
  *     summary: Récupérer les statistiques des actualités
- *     description: Retourne les statistiques générales des actualités (total, publiés, brouillons, vues)
  *     tags: [Actualités]
  *     security:
  *       - bearerAuth: []
@@ -82,34 +65,25 @@ const checkWritePermissions = async (req, res, next) => {
  *               properties:
  *                 totalArticles:
  *                   type: number
- *                   example: 5
  *                 publishedArticles:
  *                   type: number
- *                   example: 3
  *                 draftArticles:
  *                   type: number
- *                   example: 1
  *                 scheduledArticles:
  *                   type: number
- *                   example: 1
  *                 totalViews:
  *                   type: number
- *                   example: 869
  *       401:
  *         description: Token invalide
  *       403:
  *         description: Accès non autorisé
  */
-// ✅ CORRECTION : checkReadPermissions au lieu de checkWritePermissions
-// Tous les rôles (élève, instructeur, admin) peuvent voir les stats
 router.get('/stats', checkAuth, checkReadPermissions, async (req, res) => {
   try {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    const articlesSnapshot = await admin.firestore()
-      .collection('news')
-      .get();
+
+    const articlesSnapshot = await admin.firestore().collection('news').get();
 
     let totalArticles = 0;
     let publishedArticles = 0;
@@ -120,21 +94,15 @@ router.get('/stats', checkAuth, checkReadPermissions, async (req, res) => {
     articlesSnapshot.forEach(doc => {
       const data = doc.data();
       const createdAt = data.createdAt?.toDate();
-      
+
       if (createdAt && createdAt >= startOfMonth) {
         totalArticles++;
       }
 
       switch (data.status) {
-        case 'published':
-          publishedArticles++;
-          break;
-        case 'draft':
-          draftArticles++;
-          break;
-        case 'scheduled':
-          scheduledArticles++;
-          break;
+        case 'published': publishedArticles++; break;
+        case 'draft': draftArticles++; break;
+        case 'scheduled': scheduledArticles++; break;
       }
 
       totalViews += data.views || 0;
@@ -165,8 +133,10 @@ router.get('/stats', checkAuth, checkReadPermissions, async (req, res) => {
  * @swagger
  * /api/news:
  *   get:
- *     summary: Récupérer la liste des actualités avec filtres
- *     description: Retourne la liste paginée des actualités avec possibilité de filtrer par statut, catégorie, auteur et recherche
+ *     summary: Récupérer la liste des actualités
+ *     description: |
+ *       - **Élève / Instructeur** : reçoit uniquement les actualités publiées (status=published), quel que soit le paramètre status envoyé
+ *       - **Admin** : reçoit toutes les actualités, avec possibilité de filtrer par status (all, published, draft, scheduled)
  *     tags: [Actualités]
  *     security:
  *       - bearerAuth: []
@@ -176,7 +146,7 @@ router.get('/stats', checkAuth, checkReadPermissions, async (req, res) => {
  *         schema:
  *           type: string
  *           enum: [all, published, draft, scheduled]
- *         description: Filtrer par statut
+ *         description: Filtrer par statut (admin seulement, ignoré pour élève/instructeur)
  *       - in: query
  *         name: category
  *         schema:
@@ -186,7 +156,7 @@ router.get('/stats', checkAuth, checkReadPermissions, async (req, res) => {
  *         name: author
  *         schema:
  *           type: string
- *         description: Filtrer par auteur
+ *         description: Filtrer par auteur (admin seulement)
  *       - in: query
  *         name: search
  *         schema:
@@ -197,13 +167,11 @@ router.get('/stats', checkAuth, checkReadPermissions, async (req, res) => {
  *         schema:
  *           type: integer
  *           default: 1
- *         description: Numéro de page
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           default: 10
- *         description: Nombre d'articles par page
  *     responses:
  *       200:
  *         description: Liste des actualités récupérée avec succès
@@ -215,43 +183,58 @@ router.get('/stats', checkAuth, checkReadPermissions, async (req, res) => {
 router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
   try {
     const { status, category, author, search, page = 1, limit = 10 } = req.query;
-    
+    const userRole = req.user.role;
+    const isAdmin = userRole === 'admin';
+
     let query = admin.firestore().collection('news');
 
-    if (status && status !== 'all') {
-      query = query.where('status', '==', status);
+    // ✅ FILTRE PAR RÔLE :
+    // - Élève / Instructeur → toujours uniquement "published", le paramètre status est ignoré
+    // - Admin → peut filtrer librement par status
+    if (!isAdmin) {
+      query = query.where('status', '==', 'published');
+    } else {
+      if (status && status !== 'all') {
+        query = query.where('status', '==', status);
+      }
     }
+
+    // Filtre catégorie (tous les rôles)
     if (category && category !== 'all') {
       query = query.where('category', '==', category);
     }
-    if (author && author !== 'all') {
+
+    // Filtre auteur (admin seulement)
+    if (isAdmin && author && author !== 'all') {
       query = query.where('authorId', '==', author);
     }
 
     const articlesSnapshot = await query.orderBy('createdAt', 'desc').get();
-    
+
     let articles = [];
     articlesSnapshot.forEach(doc => {
       const data = doc.data();
-      
+
+      // Filtre recherche par titre
       if (search && !data.title.toLowerCase().includes(search.toLowerCase())) {
         return;
       }
-      
+
       articles.push({
         id: doc.id,
         ...data,
         createdAt: data.createdAt?.toDate(),
         updatedAt: data.updatedAt?.toDate(),
-        publishedAt: data.publishedAt?.toDate()
+        publishedAt: data.publishedAt?.toDate(),
+        scheduledAt: data.scheduledAt?.toDate()
       });
     });
 
+    // Pagination
     const total = articles.length;
     const totalPages = Math.ceil(total / limit);
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + parseInt(limit);
-    
     const paginatedArticles = articles.slice(startIndex, endIndex);
 
     res.status(200).json({
@@ -277,7 +260,7 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
  * @swagger
  * /api/news:
  *   post:
- *     summary: Créer une nouvelle actualité
+ *     summary: Créer une nouvelle actualité (admin seulement)
  *     tags: [Actualités]
  *     security:
  *       - bearerAuth: []
@@ -378,16 +361,18 @@ router.post('/', checkAuth, checkWritePermissions, upload.single('image'), async
 
     const docRef = await admin.firestore().collection('news').add(articleData);
     const createdArticle = await docRef.get();
-    const article = {
-      id: createdArticle.id,
-      ...createdArticle.data(),
-      createdAt: createdArticle.data().createdAt?.toDate(),
-      updatedAt: createdArticle.data().updatedAt?.toDate(),
-      publishedAt: createdArticle.data().publishedAt?.toDate(),
-      scheduledAt: createdArticle.data().scheduledAt?.toDate()
-    };
 
-    res.status(201).json({ message: 'Actualité créée avec succès', article });
+    res.status(201).json({
+      message: 'Actualité créée avec succès',
+      article: {
+        id: createdArticle.id,
+        ...createdArticle.data(),
+        createdAt: createdArticle.data().createdAt?.toDate(),
+        updatedAt: createdArticle.data().updatedAt?.toDate(),
+        publishedAt: createdArticle.data().publishedAt?.toDate(),
+        scheduledAt: createdArticle.data().scheduledAt?.toDate()
+      }
+    });
 
   } catch (error) {
     console.error('Erreur création actualité:', error);
@@ -407,6 +392,9 @@ router.post('/', checkAuth, checkWritePermissions, upload.single('image'), async
  * /api/news/{id}:
  *   get:
  *     summary: Récupérer une actualité par ID
+ *     description: |
+ *       - **Élève / Instructeur** : accès uniquement aux actualités publiées
+ *       - **Admin** : accès à toutes les actualités (published, draft, scheduled)
  *     tags: [Actualités]
  *     security:
  *       - bearerAuth: []
@@ -419,6 +407,8 @@ router.post('/', checkAuth, checkWritePermissions, upload.single('image'), async
  *     responses:
  *       200:
  *         description: Actualité récupérée avec succès
+ *       403:
+ *         description: Accès non autorisé (article non publié)
  *       404:
  *         description: Actualité non trouvée
  *       401:
@@ -427,22 +417,28 @@ router.post('/', checkAuth, checkWritePermissions, upload.single('image'), async
 router.get('/:id', checkAuth, checkReadPermissions, async (req, res) => {
   try {
     const { id } = req.params;
-    
+    const userRole = req.user.role;
+
     const articleDoc = await admin.firestore().collection('news').doc(id).get();
     if (!articleDoc.exists) {
       return res.status(404).json({ error: 'Actualité non trouvée' });
     }
 
-    const article = {
-      id: articleDoc.id,
-      ...articleDoc.data(),
-      createdAt: articleDoc.data().createdAt?.toDate(),
-      updatedAt: articleDoc.data().updatedAt?.toDate(),
-      publishedAt: articleDoc.data().publishedAt?.toDate(),
-      scheduledAt: articleDoc.data().scheduledAt?.toDate()
-    };
+    const data = articleDoc.data();
 
-    res.status(200).json(article);
+    // ✅ Élève / instructeur ne peuvent pas accéder aux brouillons ou planifiés
+    if (userRole !== 'admin' && data.status !== 'published') {
+      return res.status(403).json({ error: 'Cette actualité n\'est pas disponible' });
+    }
+
+    res.status(200).json({
+      id: articleDoc.id,
+      ...data,
+      createdAt: data.createdAt?.toDate(),
+      updatedAt: data.updatedAt?.toDate(),
+      publishedAt: data.publishedAt?.toDate(),
+      scheduledAt: data.scheduledAt?.toDate()
+    });
 
   } catch (error) {
     console.error('Erreur récupération actualité:', error);
@@ -457,7 +453,7 @@ router.get('/:id', checkAuth, checkReadPermissions, async (req, res) => {
  * @swagger
  * /api/news/{id}:
  *   put:
- *     summary: Modifier une actualité
+ *     summary: Modifier une actualité (admin seulement)
  *     tags: [Actualités]
  *     security:
  *       - bearerAuth: []
@@ -519,8 +515,7 @@ router.put('/:id', checkAuth, checkWritePermissions, upload.single('image'), asy
 
     if (req.file) {
       try {
-        const imageUrl = await uploadImageToStorage(req.file);
-        updateData.imageUrl = imageUrl;
+        updateData.imageUrl = await uploadImageToStorage(req.file);
       } catch (error) {
         console.error('Erreur upload image:', error);
         return res.status(400).json({ error: 'Erreur lors de l\'upload de l\'image' });
@@ -528,18 +523,19 @@ router.put('/:id', checkAuth, checkWritePermissions, upload.single('image'), asy
     }
 
     await admin.firestore().collection('news').doc(id).update(updateData);
-    
-    const updatedDoc = await admin.firestore().collection('news').doc(id).get();
-    const article = {
-      id: updatedDoc.id,
-      ...updatedDoc.data(),
-      createdAt: updatedDoc.data().createdAt?.toDate(),
-      updatedAt: updatedDoc.data().updatedAt?.toDate(),
-      publishedAt: updatedDoc.data().publishedAt?.toDate(),
-      scheduledAt: updatedDoc.data().scheduledAt?.toDate()
-    };
 
-    res.status(200).json({ message: 'Actualité modifiée avec succès', article });
+    const updatedDoc = await admin.firestore().collection('news').doc(id).get();
+    res.status(200).json({
+      message: 'Actualité modifiée avec succès',
+      article: {
+        id: updatedDoc.id,
+        ...updatedDoc.data(),
+        createdAt: updatedDoc.data().createdAt?.toDate(),
+        updatedAt: updatedDoc.data().updatedAt?.toDate(),
+        publishedAt: updatedDoc.data().publishedAt?.toDate(),
+        scheduledAt: updatedDoc.data().scheduledAt?.toDate()
+      }
+    });
 
   } catch (error) {
     console.error('Erreur modification actualité:', error);
@@ -554,7 +550,7 @@ router.put('/:id', checkAuth, checkWritePermissions, upload.single('image'), asy
  * @swagger
  * /api/news/{id}:
  *   delete:
- *     summary: Supprimer une actualité
+ *     summary: Supprimer une actualité (admin seulement)
  *     tags: [Actualités]
  *     security:
  *       - bearerAuth: []
@@ -589,7 +585,6 @@ router.delete('/:id', checkAuth, checkWritePermissions, async (req, res) => {
     }
 
     await admin.firestore().collection('news').doc(id).delete();
-
     res.status(200).json({ message: 'Actualité supprimée avec succès' });
 
   } catch (error) {
@@ -633,9 +628,7 @@ router.post('/:id/view', async (req, res) => {
     });
 
     const updatedDoc = await admin.firestore().collection('news').doc(id).get();
-    const views = updatedDoc.data().views;
-
-    res.status(200).json({ message: 'Vue comptabilisée', views });
+    res.status(200).json({ message: 'Vue comptabilisée', views: updatedDoc.data().views });
 
   } catch (error) {
     console.error('Erreur incrémentation vues:', error);
