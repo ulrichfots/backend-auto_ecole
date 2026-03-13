@@ -85,7 +85,18 @@ try {
 } catch (error) {
     console.error("Erreur chargement route seed:", error.message);
 }
-
+try {
+    app.use('/api/settings', require('./routes/settings'));
+    console.log("Route /api/settings chargee");
+} catch (error) {
+    console.error("Erreur chargement route settings:", error.message);
+}
+try {
+    app.use('/api/reservations', require('./routes/reservations'));
+    console.log("Route /api/reservations chargee");
+} catch (error) {
+    console.error("Erreur chargement route reservations:", error.message);
+}
 // ✅ 3. Configuration Swagger
 // ... (tes imports restent les mêmes)
 
