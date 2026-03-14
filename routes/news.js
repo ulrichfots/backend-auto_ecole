@@ -1,26 +1,60 @@
 const express = require('express');
 const router = express.Router();
 const { admin } = require('../firebase');
-const { validate, schemas } = require('../middlewares/validationMiddleware');
 const { checkAuth } = require('../middlewares/authMiddleware');
 const multer = require('multer');
-const { uploadImageToStorage } = require('../firebase');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { v4: uuidv4 } = require('uuid');
 
-const storage = multer.memoryStorage();
+// ============================================================
+// ✅ CONFIGURATION CLOUDFLARE R2
+// ============================================================
+const s3 = new S3Client({
+  region: 'auto',
+  endpoint: `https://${process.env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.CLOUDFLARE_ACCESS_KEY_ID,
+    secretAccessKey: process.env.CLOUDFLARE_SECRET_ACCESS_KEY
+  }
+});
+
+const uploadToR2 = async (file) => {
+  const ext = file.originalname.split('.').pop();
+  const fileName = `news/${uuidv4()}.${ext}`;
+
+  await s3.send(new PutObjectCommand({
+    Bucket: process.env.CLOUDFLARE_BUCKET_NAME,
+    Key: fileName,
+    Body: file.buffer,
+    ContentType: file.mimetype
+  }));
+
+  return `${process.env.CLOUDFLARE_PUBLIC_URL}/${fileName}`;
+};
+
+// ============================================================
+// ✅ CONFIGURATION MULTER (stockage en mémoire)
+// ============================================================
 const upload = multer({
-  storage,
-  limits: { fileSize: 10 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
   fileFilter: (req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true);
     else cb(new Error('Seules les images sont autorisées'), false);
   }
 });
 
+// ============================================================
+// ✅ MIDDLEWARES
+// ============================================================
 const checkReadPermissions = async (req, res, next) => { next(); };
 
 const checkWritePermissions = async (req, res, next) => {
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Accès non autorisé', message: 'Seuls les administrateurs peuvent modifier les actualités' });
+    return res.status(403).json({
+      error: 'Accès non autorisé',
+      message: 'Seuls les administrateurs peuvent modifier les actualités'
+    });
   }
   next();
 };
@@ -90,7 +124,7 @@ router.get('/stats', checkAuth, checkReadPermissions, async (req, res) => {
  * /api/news:
  *   get:
  *     summary: Liste de toutes les actualités
- *     description: Retourne toutes les actualités. Tout le monde (élève, instructeur, admin) voit toutes les actualités sans restriction de statut.
+ *     description: Retourne toutes les actualités sans restriction. Tout le monde voit tout.
  *     tags: [Actualités]
  *     security:
  *       - bearerAuth: []
@@ -100,17 +134,14 @@ router.get('/stats', checkAuth, checkReadPermissions, async (req, res) => {
  *         schema:
  *           type: string
  *           enum: [all, published, draft, scheduled]
- *         description: Filtrer par statut (optionnel)
  *       - in: query
  *         name: category
  *         schema:
  *           type: string
- *         description: Filtrer par catégorie
  *       - in: query
  *         name: search
  *         schema:
  *           type: string
- *         description: Rechercher par titre
  *       - in: query
  *         name: page
  *         schema:
@@ -124,17 +155,6 @@ router.get('/stats', checkAuth, checkReadPermissions, async (req, res) => {
  *     responses:
  *       200:
  *         description: Liste récupérée avec succès
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 articles:
- *                   type: array
- *                   items:
- *                     type: object
- *                 pagination:
- *                   type: object
  */
 router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
   try {
@@ -142,13 +162,8 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
 
     let query = admin.firestore().collection('news');
 
-    // ✅ Pas de filtre par rôle — tout le monde voit tout
-    if (status && status !== 'all') {
-      query = query.where('status', '==', status);
-    }
-    if (category && category !== 'all') {
-      query = query.where('category', '==', category);
-    }
+    if (status && status !== 'all') query = query.where('status', '==', status);
+    if (category && category !== 'all') query = query.where('category', '==', category);
 
     const snap = await query.orderBy('createdAt', 'desc').get();
 
@@ -174,7 +189,7 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
     });
   } catch (error) {
     console.error('Erreur GET /news:', error);
-    res.status(500).json({ error: 'Erreur interne du serveur', details: process.env.NODE_ENV === 'development' ? error.message : undefined });
+    res.status(500).json({ error: 'Erreur interne du serveur' });
   }
 });
 
@@ -182,7 +197,8 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
  * @swagger
  * /api/news:
  *   post:
- *     summary: Créer une actualité (admin)
+ *     summary: Créer une actualité avec image (admin)
+ *     description: Crée une actualité. L'image est uploadée sur Cloudflare R2.
  *     tags: [Actualités]
  *     security:
  *       - bearerAuth: []
@@ -229,26 +245,43 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
  */
 router.post('/', checkAuth, checkWritePermissions, upload.single('image'), async (req, res) => {
   try {
-    const { title, excerpt, content, category, status = 'published', tags, allowComments = true, pinToTop = false, sendNotification = false, scheduledAt } = req.body;
+    const {
+      title, excerpt, content, category,
+      status = 'published', tags,
+      allowComments = true, pinToTop = false,
+      sendNotification = false, scheduledAt
+    } = req.body;
 
     if (!title || !content || !category) {
       return res.status(400).json({ error: 'Titre, contenu et catégorie sont requis' });
     }
 
+    // ✅ Upload image sur Cloudflare R2
     let imageUrl = null;
     if (req.file) {
-      try { imageUrl = await uploadImageToStorage(req.file); }
-      catch { return res.status(400).json({ error: 'Erreur lors de l\'upload de l\'image' }); }
+      try {
+        imageUrl = await uploadToR2(req.file);
+        console.log('✅ Image uploadée sur R2:', imageUrl);
+      } catch (uploadError) {
+        console.error('❌ Erreur upload R2:', uploadError);
+        return res.status(400).json({ error: 'Erreur lors de l\'upload de l\'image sur Cloudflare R2' });
+      }
     }
 
     const articleData = {
-      title, excerpt: excerpt || '', content, category, status,
+      title,
+      excerpt: excerpt || '',
+      content,
+      category,
+      status,
       tags: tags ? tags.split(',').map(t => t.trim()) : [],
       allowComments: allowComments === 'true' || allowComments === true,
       pinToTop: pinToTop === 'true' || pinToTop === true,
       sendNotification: sendNotification === 'true' || sendNotification === true,
-      authorId: req.user.uid, authorName: req.user.nom,
-      views: 0, imageUrl,
+      authorId: req.user.uid,
+      authorName: req.user.nom || req.user.name || 'Admin',
+      views: 0,
+      imageUrl,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
@@ -264,11 +297,15 @@ router.post('/', checkAuth, checkWritePermissions, upload.single('image'), async
 
     res.status(201).json({
       message: 'Actualité créée avec succès',
-      article: { id: created.id, ...created.data(), createdAt: created.data().createdAt?.toDate(), updatedAt: created.data().updatedAt?.toDate() }
+      article: {
+        id: created.id, ...created.data(),
+        createdAt: created.data().createdAt?.toDate(),
+        updatedAt: created.data().updatedAt?.toDate()
+      }
     });
   } catch (error) {
     console.error('Erreur POST /news:', error);
-    res.status(500).json({ error: 'Erreur interne du serveur', details: process.env.NODE_ENV === 'development' ? error.message : undefined });
+    res.status(500).json({ error: 'Erreur interne du serveur' });
   }
 });
 
@@ -281,7 +318,7 @@ router.post('/', checkAuth, checkWritePermissions, upload.single('image'), async
  * /api/news/{id}:
  *   get:
  *     summary: Récupérer une actualité par ID
- *     description: Retourne le contenu complet d'une actualité. Accessible par tous les utilisateurs connectés sans restriction.
+ *     description: Retourne le contenu complet d'une actualité. Accessible par tous sans restriction.
  *     tags: [Actualités]
  *     security:
  *       - bearerAuth: []
@@ -291,14 +328,11 @@ router.post('/', checkAuth, checkWritePermissions, upload.single('image'), async
  *         required: true
  *         schema:
  *           type: string
- *         description: ID de l'actualité
  *     responses:
  *       200:
  *         description: Actualité récupérée avec succès
  *       404:
  *         description: Actualité non trouvée
- *       401:
- *         description: Token invalide
  */
 router.get('/:id', checkAuth, checkReadPermissions, async (req, res) => {
   try {
@@ -306,7 +340,6 @@ router.get('/:id', checkAuth, checkReadPermissions, async (req, res) => {
     const articleDoc = await admin.firestore().collection('news').doc(id).get();
     if (!articleDoc.exists) return res.status(404).json({ error: 'Actualité non trouvée' });
 
-    // ✅ Pas de restriction — tout le monde peut lire toutes les actualités
     const data = articleDoc.data();
     res.status(200).json({
       id: articleDoc.id, ...data,
@@ -326,6 +359,7 @@ router.get('/:id', checkAuth, checkReadPermissions, async (req, res) => {
  * /api/news/{id}:
  *   put:
  *     summary: Modifier une actualité (admin)
+ *     description: Modifie une actualité. Si une nouvelle image est fournie, elle remplace l'ancienne sur Cloudflare R2.
  *     tags: [Actualités]
  *     security:
  *       - bearerAuth: []
@@ -367,10 +401,19 @@ router.put('/:id', checkAuth, checkWritePermissions, upload.single('image'), asy
     if (tags !== undefined) updateData.tags = tags ? tags.split(',').map(t => t.trim()) : [];
     if (allowComments !== undefined) updateData.allowComments = allowComments === 'true' || allowComments === true;
     if (pinToTop !== undefined) updateData.pinToTop = pinToTop === 'true' || pinToTop === true;
-    if (scheduledAt && status === 'scheduled') updateData.scheduledAt = admin.firestore.Timestamp.fromDate(new Date(scheduledAt));
+    if (scheduledAt && status === 'scheduled') {
+      updateData.scheduledAt = admin.firestore.Timestamp.fromDate(new Date(scheduledAt));
+    }
+
+    // ✅ Nouvelle image → upload sur R2
     if (req.file) {
-      try { updateData.imageUrl = await uploadImageToStorage(req.file); }
-      catch { return res.status(400).json({ error: 'Erreur lors de l\'upload de l\'image' }); }
+      try {
+        updateData.imageUrl = await uploadToR2(req.file);
+        console.log('✅ Image mise à jour sur R2:', updateData.imageUrl);
+      } catch (uploadError) {
+        console.error('❌ Erreur upload R2:', uploadError);
+        return res.status(400).json({ error: 'Erreur lors de l\'upload de l\'image' });
+      }
     }
 
     await admin.firestore().collection('news').doc(id).update(updateData);
@@ -378,7 +421,11 @@ router.put('/:id', checkAuth, checkWritePermissions, upload.single('image'), asy
 
     res.status(200).json({
       message: 'Actualité modifiée avec succès',
-      article: { id: updated.id, ...updated.data(), createdAt: updated.data().createdAt?.toDate(), updatedAt: updated.data().updatedAt?.toDate() }
+      article: {
+        id: updated.id, ...updated.data(),
+        createdAt: updated.data().createdAt?.toDate(),
+        updatedAt: updated.data().updatedAt?.toDate()
+      }
     });
   } catch (error) {
     console.error('Erreur PUT /news/:id:', error);
@@ -414,6 +461,22 @@ router.delete('/:id', checkAuth, checkWritePermissions, async (req, res) => {
     const articleDoc = await admin.firestore().collection('news').doc(id).get();
     if (!articleDoc.exists) return res.status(404).json({ error: 'Actualité non trouvée' });
 
+    // ✅ Supprimer l'image de R2 si elle existe
+    const imageUrl = articleDoc.data().imageUrl;
+    if (imageUrl && imageUrl.includes(process.env.CLOUDFLARE_PUBLIC_URL)) {
+      try {
+        const fileName = imageUrl.replace(`${process.env.CLOUDFLARE_PUBLIC_URL}/`, '');
+        await s3.send(new DeleteObjectCommand({
+          Bucket: process.env.CLOUDFLARE_BUCKET_NAME,
+          Key: fileName
+        }));
+        console.log('✅ Image supprimée de R2:', fileName);
+      } catch (deleteError) {
+        console.error('⚠️ Erreur suppression image R2:', deleteError);
+        // On continue même si la suppression de l'image échoue
+      }
+    }
+
     await admin.firestore().collection('news').doc(id).delete();
     res.status(200).json({ message: 'Actualité supprimée avec succès' });
   } catch (error) {
@@ -446,7 +509,10 @@ router.post('/:id/view', async (req, res) => {
     const articleDoc = await admin.firestore().collection('news').doc(id).get();
     if (!articleDoc.exists) return res.status(404).json({ error: 'Actualité non trouvée' });
 
-    await admin.firestore().collection('news').doc(id).update({ views: admin.firestore.FieldValue.increment(1) });
+    await admin.firestore().collection('news').doc(id).update({
+      views: admin.firestore.FieldValue.increment(1)
+    });
+
     const updated = await admin.firestore().collection('news').doc(id).get();
     res.status(200).json({ message: 'Vue comptabilisée', views: updated.data().views });
   } catch (error) {
