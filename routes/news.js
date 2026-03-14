@@ -5,6 +5,7 @@ const { checkAuth } = require('../middlewares/authMiddleware');
 const multer = require('multer');
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const { v4: uuidv4 } = require('uuid');
+const sharp = require('sharp');
 
 // ============================================================
 // ✅ CONFIGURATION CLOUDFLARE R2
@@ -18,29 +19,76 @@ const s3 = new S3Client({
   }
 });
 
-const uploadToR2 = async (file) => {
-  const ext = file.originalname.split('.').pop();
+// ============================================================
+// ✅ CONVERSION + UPLOAD IMAGE SUR R2
+// ============================================================
+const processAndUploadImage = async (file) => {
+  const originalMime = file.mimetype;
+  const allowedFormats = ['image/jpeg', 'image/png', 'image/webp'];
+
+  let imageBuffer;
+  let contentType;
+  let ext;
+
+  if (allowedFormats.includes(originalMime)) {
+    // ✅ Format déjà compatible — on optimise juste la qualité
+    if (originalMime === 'image/png') {
+      imageBuffer = await sharp(file.buffer).png({ quality: 90 }).toBuffer();
+      contentType = 'image/png';
+      ext = 'png';
+    } else if (originalMime === 'image/webp') {
+      imageBuffer = await sharp(file.buffer).webp({ quality: 85 }).toBuffer();
+      contentType = 'image/webp';
+      ext = 'webp';
+    } else {
+      // jpeg
+      imageBuffer = await sharp(file.buffer).jpeg({ quality: 85 }).toBuffer();
+      contentType = 'image/jpeg';
+      ext = 'jpg';
+    }
+  } else {
+    // ✅ Format non compatible (gif, bmp, tiff, heic, avif...) → on convertit en JPEG
+    console.log(`⚠️ Format ${originalMime} non compatible → conversion en JPEG`);
+    imageBuffer = await sharp(file.buffer).jpeg({ quality: 85 }).toBuffer();
+    contentType = 'image/jpeg';
+    ext = 'jpg';
+  }
+
+  // ✅ Redimensionner si trop grande (max 1920px de large)
+  const metadata = await sharp(imageBuffer).metadata();
+  if (metadata.width > 1920) {
+    imageBuffer = await sharp(imageBuffer)
+      .resize({ width: 1920, withoutEnlargement: true })
+      .toBuffer();
+    console.log(`📐 Image redimensionnée à 1920px`);
+  }
+
   const fileName = `news/${uuidv4()}.${ext}`;
 
   await s3.send(new PutObjectCommand({
     Bucket: process.env.CLOUDFLARE_BUCKET_NAME,
     Key: fileName,
-    Body: file.buffer,
-    ContentType: file.mimetype
+    Body: imageBuffer,
+    ContentType: contentType
   }));
 
+  console.log(`✅ Image uploadée sur R2: ${fileName} (${contentType})`);
   return `${process.env.CLOUDFLARE_PUBLIC_URL}/${fileName}`;
 };
 
 // ============================================================
-// ✅ CONFIGURATION MULTER (stockage en mémoire)
+// ✅ CONFIGURATION MULTER
 // ============================================================
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('Seules les images sont autorisées'), false);
+    // ✅ On accepte tous les formats image — on convertira si nécessaire
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Seuls les fichiers image sont autorisés'), false);
+    }
   }
 });
 
@@ -161,7 +209,6 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
     const { status, category, search, page = 1, limit = 10 } = req.query;
 
     let query = admin.firestore().collection('news');
-
     if (status && status !== 'all') query = query.where('status', '==', status);
     if (category && category !== 'all') query = query.where('category', '==', category);
 
@@ -198,7 +245,12 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
  * /api/news:
  *   post:
  *     summary: Créer une actualité avec image (admin)
- *     description: Crée une actualité. L'image est uploadée sur Cloudflare R2.
+ *     description: |
+ *       Crée une actualité. L'image est automatiquement :
+ *       - **Convertie** en JPEG si le format n'est pas compatible (gif, bmp, tiff, heic...)
+ *       - **Optimisée** (qualité 85%)
+ *       - **Redimensionnée** si plus large que 1920px
+ *       - **Uploadée** sur Cloudflare R2
  *     tags: [Actualités]
  *     security:
  *       - bearerAuth: []
@@ -235,6 +287,7 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
  *               image:
  *                 type: string
  *                 format: binary
+ *                 description: Tous formats image acceptés (jpeg, png, webp, gif, bmp, tiff, heic...)
  *     responses:
  *       201:
  *         description: Actualité créée avec succès
@@ -256,15 +309,14 @@ router.post('/', checkAuth, checkWritePermissions, upload.single('image'), async
       return res.status(400).json({ error: 'Titre, contenu et catégorie sont requis' });
     }
 
-    // ✅ Upload image sur Cloudflare R2
+    // ✅ Traitement image — conversion auto si nécessaire
     let imageUrl = null;
     if (req.file) {
       try {
-        imageUrl = await uploadToR2(req.file);
-        console.log('✅ Image uploadée sur R2:', imageUrl);
+        imageUrl = await processAndUploadImage(req.file);
       } catch (uploadError) {
-        console.error('❌ Erreur upload R2:', uploadError);
-        return res.status(400).json({ error: 'Erreur lors de l\'upload de l\'image sur Cloudflare R2' });
+        console.error('❌ Erreur traitement image:', uploadError);
+        return res.status(400).json({ error: 'Erreur lors du traitement de l\'image' });
       }
     }
 
@@ -359,7 +411,7 @@ router.get('/:id', checkAuth, checkReadPermissions, async (req, res) => {
  * /api/news/{id}:
  *   put:
  *     summary: Modifier une actualité (admin)
- *     description: Modifie une actualité. Si une nouvelle image est fournie, elle remplace l'ancienne sur Cloudflare R2.
+ *     description: Si une nouvelle image est fournie, elle est convertie et remplace l'ancienne sur Cloudflare R2.
  *     tags: [Actualités]
  *     security:
  *       - bearerAuth: []
@@ -405,14 +457,13 @@ router.put('/:id', checkAuth, checkWritePermissions, upload.single('image'), asy
       updateData.scheduledAt = admin.firestore.Timestamp.fromDate(new Date(scheduledAt));
     }
 
-    // ✅ Nouvelle image → upload sur R2
+    // ✅ Nouvelle image → conversion + upload sur R2
     if (req.file) {
       try {
-        updateData.imageUrl = await uploadToR2(req.file);
-        console.log('✅ Image mise à jour sur R2:', updateData.imageUrl);
+        updateData.imageUrl = await processAndUploadImage(req.file);
       } catch (uploadError) {
-        console.error('❌ Erreur upload R2:', uploadError);
-        return res.status(400).json({ error: 'Erreur lors de l\'upload de l\'image' });
+        console.error('❌ Erreur traitement image:', uploadError);
+        return res.status(400).json({ error: 'Erreur lors du traitement de l\'image' });
       }
     }
 
@@ -463,7 +514,7 @@ router.delete('/:id', checkAuth, checkWritePermissions, async (req, res) => {
 
     // ✅ Supprimer l'image de R2 si elle existe
     const imageUrl = articleDoc.data().imageUrl;
-    if (imageUrl && imageUrl.includes(process.env.CLOUDFLARE_PUBLIC_URL)) {
+    if (imageUrl && process.env.CLOUDFLARE_PUBLIC_URL && imageUrl.includes(process.env.CLOUDFLARE_PUBLIC_URL)) {
       try {
         const fileName = imageUrl.replace(`${process.env.CLOUDFLARE_PUBLIC_URL}/`, '');
         await s3.send(new DeleteObjectCommand({
@@ -472,8 +523,7 @@ router.delete('/:id', checkAuth, checkWritePermissions, async (req, res) => {
         }));
         console.log('✅ Image supprimée de R2:', fileName);
       } catch (deleteError) {
-        console.error('⚠️ Erreur suppression image R2:', deleteError);
-        // On continue même si la suppression de l'image échoue
+        console.error('⚠️ Erreur suppression image R2 (non bloquant):', deleteError);
       }
     }
 
