@@ -2,9 +2,6 @@ const express = require('express');
 const router = express.Router();
 const { admin } = require('../firebase');
 const { checkAuth } = require('../middlewares/authMiddleware');
-const { validate, schemas } = require('../middlewares/validationMiddleware');
-
-const checkReadPermissions = async (req, res, next) => { next(); };
 
 const checkWritePermissions = async (req, res, next) => {
   if (req.user.role !== 'admin') {
@@ -24,17 +21,28 @@ const checkWritePermissions = async (req, res, next) => {
  * @swagger
  * /api/sessions/stats:
  *   get:
- *     summary: Statistiques de présence du jour
+ *     summary: Statistiques des séances
+ *     description: |
+ *       Retourne les statistiques selon le type demandé :
+ *       - **?type=day** (défaut) → présences du jour (presents, absents, en_retard, annules)
+ *       - **?type=dashboard** → stats du mois en cours (total, confirmées, aujourd'hui, cette semaine)
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
  *     parameters:
  *       - in: query
+ *         name: type
+ *         schema:
+ *           type: string
+ *           enum: [day, dashboard]
+ *           default: day
+ *         description: Type de statistiques
+ *       - in: query
  *         name: date
  *         schema:
  *           type: string
  *           format: date
- *         description: Date cible (YYYY-MM-DD), par défaut aujourd'hui
+ *         description: Date cible pour type=day (YYYY-MM-DD), par défaut aujourd'hui
  *     responses:
  *       200:
  *         description: Statistiques récupérées avec succès
@@ -42,21 +50,45 @@ const checkWritePermissions = async (req, res, next) => {
  *           application/json:
  *             schema:
  *               type: object
- *               properties:
- *                 totalEleves:
- *                   type: number
- *                 presents:
- *                   type: number
- *                 absents:
- *                   type: number
- *                 enRetard:
- *                   type: number
- *                 annules:
- *                   type: number
+ *               description: |
+ *                 Pour type=day: { totalEleves, presents, absents, enRetard, annules }
+ *                 Pour type=dashboard: { totalSessions, confirmedSessions, pendingSessions, cancelledSessions, todaySessions, thisWeekSessions }
+ *       401:
+ *         description: Token invalide
+ *       500:
+ *         description: Erreur serveur
  */
 router.get('/stats', checkAuth, async (req, res) => {
   try {
-    const { date } = req.query;
+    const { type = 'day', date } = req.query;
+
+    if (type === 'dashboard') {
+      // ✅ Stats dashboard — mois en cours
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
+      const startOfWeek = new Date(now); startOfWeek.setDate(now.getDate() - now.getDay() + 1); startOfWeek.setHours(0, 0, 0, 0);
+      const endOfWeek = new Date(startOfWeek); endOfWeek.setDate(startOfWeek.getDate() + 6); endOfWeek.setHours(23, 59, 59, 999);
+
+      const [monthlySnap, todaySnap, weekSnap] = await Promise.all([
+        admin.firestore().collection('sessions').where('scheduledDate', '>=', startOfMonth).get(),
+        admin.firestore().collection('sessions').where('scheduledDate', '>=', startOfDay).where('scheduledDate', '<=', endOfDay).get(),
+        admin.firestore().collection('sessions').where('scheduledDate', '>=', startOfWeek).where('scheduledDate', '<=', endOfWeek).get()
+      ]);
+
+      const monthly = monthlySnap.docs.map(doc => doc.data());
+      return res.status(200).json({
+        totalSessions: monthly.length,
+        confirmedSessions: monthly.filter(s => s.status === 'confirmée').length,
+        pendingSessions: monthly.filter(s => s.status === 'en_attente').length,
+        cancelledSessions: monthly.filter(s => s.status === 'annulée').length,
+        todaySessions: todaySnap.size,
+        thisWeekSessions: weekSnap.size
+      });
+    }
+
+    // ✅ Stats du jour — présences
     const targetDate = date ? new Date(date) : new Date();
     const startOfDay = new Date(targetDate); startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(targetDate); endOfDay.setHours(23, 59, 59, 999);
@@ -82,139 +114,6 @@ router.get('/stats', checkAuth, async (req, res) => {
 
 /**
  * @swagger
- * /api/sessions/dashboard-stats:
- *   get:
- *     summary: Statistiques du dashboard des séances
- *     tags: [Sessions]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Statistiques récupérées avec succès
- */
-router.get('/dashboard-stats', checkAuth, async (req, res) => {
-  try {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfDay = new Date(now); startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(now); endOfDay.setHours(23, 59, 59, 999);
-    const startOfWeek = new Date(now); startOfWeek.setDate(now.getDate() - now.getDay() + 1); startOfWeek.setHours(0, 0, 0, 0);
-    const endOfWeek = new Date(startOfWeek); endOfWeek.setDate(startOfWeek.getDate() + 6); endOfWeek.setHours(23, 59, 59, 999);
-
-    const [monthlySnap, todaySnap, weekSnap] = await Promise.all([
-      admin.firestore().collection('sessions').where('scheduledDate', '>=', startOfMonth).get(),
-      admin.firestore().collection('sessions').where('scheduledDate', '>=', startOfDay).where('scheduledDate', '<=', endOfDay).get(),
-      admin.firestore().collection('sessions').where('scheduledDate', '>=', startOfWeek).where('scheduledDate', '<=', endOfWeek).get()
-    ]);
-
-    const monthly = monthlySnap.docs.map(doc => doc.data());
-    res.status(200).json({
-      totalSessions: monthly.length,
-      confirmedSessions: monthly.filter(s => s.status === 'confirmée').length,
-      pendingSessions: monthly.filter(s => s.status === 'en_attente').length,
-      cancelledSessions: monthly.filter(s => s.status === 'annulée').length,
-      todaySessions: todaySnap.size,
-      thisWeekSessions: weekSnap.size
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la récupération des statistiques' });
-  }
-});
-
-/**
- * @swagger
- * /api/sessions/upcoming:
- *   get:
- *     summary: Séances à venir avec pagination
- *     tags: [Sessions]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
- *       - in: query
- *         name: instructorId
- *         schema:
- *           type: string
- *       - in: query
- *         name: type
- *         schema:
- *           type: string
- *       - in: query
- *         name: page
- *         schema:
- *           type: integer
- *           default: 1
- *       - in: query
- *         name: limit
- *         schema:
- *           type: integer
- *           default: 10
- *     responses:
- *       200:
- *         description: Séances à venir récupérées avec succès
- */
-router.get('/upcoming', checkAuth, checkReadPermissions, async (req, res) => {
-  try {
-    const { status, instructorId, type, page = 1, limit = 10 } = req.query;
-    let query = admin.firestore().collection('sessions').where('scheduledDate', '>=', new Date()).orderBy('scheduledDate', 'asc');
-    if (status && status !== 'all') query = query.where('status', '==', status);
-    if (instructorId && instructorId !== 'all') query = query.where('instructorId', '==', instructorId);
-    if (type && type !== 'all') query = query.where('courseType', '==', type);
-
-    const snap = await query.get();
-    let sessions = snap.docs.map(doc => ({ id: doc.id, ...doc.data(), scheduledDate: doc.data().scheduledDate?.toDate() }));
-    const total = sessions.length;
-    const paginatedSessions = sessions.slice((page - 1) * limit, page * parseInt(limit));
-
-    const enriched = await Promise.all(paginatedSessions.map(async (session) => {
-      const [studentDoc, instructorDoc] = await Promise.all([
-        admin.firestore().collection('users').doc(session.studentId).get(),
-        admin.firestore().collection('users').doc(session.instructorId).get()
-      ]);
-      const s = studentDoc.exists ? studentDoc.data() : null;
-      const i = instructorDoc.exists ? instructorDoc.data() : null;
-      return {
-        id: session.id,
-        student: { id: session.studentId, nom: s?.nom || 'Élève inconnu', email: s?.email || '' },
-        instructor: { id: session.instructorId, nom: i?.nom || 'Instructeur inconnu' },
-        type: session.courseType, date: session.scheduledDate,
-        time: session.scheduledTime, duration: session.duration, status: session.status
-      };
-    }));
-
-    res.status(200).json({ sessions: enriched, pagination: { page: parseInt(page), limit: parseInt(limit), total, totalPages: Math.ceil(total / limit) } });
-  } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la récupération des séances' });
-  }
-});
-
-/**
- * @swagger
- * /api/sessions/instructors:
- *   get:
- *     summary: Liste des instructeurs
- *     tags: [Sessions]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Liste récupérée avec succès
- */
-router.get('/instructors', checkAuth, async (req, res) => {
-  try {
-    const snap = await admin.firestore().collection('users').where('role', '==', 'instructeur').get();
-    const instructors = snap.docs.map(doc => ({ id: doc.id, nom: doc.data().nom, email: doc.data().email }));
-    res.status(200).json({ instructors });
-  } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la récupération des instructeurs' });
-  }
-});
-
-/**
- * @swagger
  * /api/sessions/types:
  *   get:
  *     summary: Liste des types de séances
@@ -224,6 +123,22 @@ router.get('/instructors', checkAuth, async (req, res) => {
  *     responses:
  *       200:
  *         description: Types récupérés avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 types:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       value:
+ *                         type: string
+ *                       label:
+ *                         type: string
+ *                       color:
+ *                         type: string
  */
 router.get('/types', checkAuth, async (req, res) => {
   res.status(200).json({
@@ -243,7 +158,7 @@ router.get('/types', checkAuth, async (req, res) => {
  * /api/sessions/me:
  *   get:
  *     summary: Séances confirmées de l'élève connecté
- *     description: Retourne les séances confirmées de l'élève (créées après validation d'une réservation)
+ *     description: Retourne les séances de l'élève connecté, créées après validation d'une réservation
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
@@ -256,6 +171,36 @@ router.get('/types', checkAuth, async (req, res) => {
  *     responses:
  *       200:
  *         description: Séances récupérées avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 sessions:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                       title:
+ *                         type: string
+ *                       instructorName:
+ *                         type: string
+ *                       date:
+ *                         type: string
+ *                       time:
+ *                         type: string
+ *                       duration:
+ *                         type: string
+ *                       type:
+ *                         type: string
+ *                         enum: [Pratique, Théorique, En ligne]
+ *                       status:
+ *                         type: string
+ *                         enum: [À venir, Terminé, Absent, Annulée]
+ *                 totalCount:
+ *                   type: number
  */
 router.get('/me', checkAuth, async (req, res) => {
   try {
@@ -299,40 +244,9 @@ router.get('/me', checkAuth, async (req, res) => {
 
     res.status(200).json({ sessions, totalCount: sessions.length });
   } catch (error) {
+    console.error('Erreur /me:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération des séances' });
   }
-});
-
-/**
- * @swagger
- * /api/sessions/export/pdf:
- *   post:
- *     summary: Exporter les sessions en PDF (admin)
- *     tags: [Sessions]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Export en cours de développement
- */
-router.post('/export/pdf', checkAuth, checkWritePermissions, async (req, res) => {
-  res.status(200).json({ message: 'Export PDF en cours de développement' });
-});
-
-/**
- * @swagger
- * /api/sessions/export/excel:
- *   post:
- *     summary: Exporter les sessions en Excel (admin)
- *     tags: [Sessions]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: Export en cours de développement
- */
-router.post('/export/excel', checkAuth, checkWritePermissions, async (req, res) => {
-  res.status(200).json({ message: 'Export Excel en cours de développement' });
 });
 
 // ============================================================
@@ -343,32 +257,52 @@ router.post('/export/excel', checkAuth, checkWritePermissions, async (req, res) 
  * @swagger
  * /api/sessions:
  *   get:
- *     summary: Liste des sessions avec filtres et pagination
+ *     summary: Liste des séances avec filtres et pagination
+ *     description: |
+ *       Filtres disponibles via query params :
+ *       - **upcoming=true** → séances futures uniquement
+ *       - **date=YYYY-MM-DD** → séances d'un jour précis
+ *       - **startDate + endDate** → séances sur une période
+ *       - **status** → filtrer par statut
+ *       - **studentId** → séances d'un élève
+ *       - **instructorId** → séances d'un instructeur
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
  *     parameters:
+ *       - in: query
+ *         name: upcoming
+ *         schema:
+ *           type: boolean
+ *         description: Si true, retourne uniquement les séances futures
  *       - in: query
  *         name: date
  *         schema:
  *           type: string
  *           format: date
  *       - in: query
- *         name: instructorId
+ *         name: startDate
  *         schema:
  *           type: string
+ *           format: date
+ *       - in: query
+ *         name: endDate
+ *         schema:
+ *           type: string
+ *           format: date
  *       - in: query
  *         name: status
  *         schema:
  *           type: string
+ *           enum: [confirmée, présent, absent, en_retard, annulée]
  *       - in: query
  *         name: studentId
  *         schema:
  *           type: string
  *       - in: query
- *         name: upcoming
+ *         name: instructorId
  *         schema:
- *           type: boolean
+ *           type: string
  *       - in: query
  *         name: page
  *         schema:
@@ -381,15 +315,15 @@ router.post('/export/excel', checkAuth, checkWritePermissions, async (req, res) 
  *           default: 10
  *     responses:
  *       200:
- *         description: Liste des sessions récupérée avec succès
+ *         description: Liste récupérée avec succès
  */
-router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
+router.get('/', checkAuth, async (req, res) => {
   try {
     const { date, instructorId, status, studentId, startDate, endDate, upcoming, page = 1, limit = 10 } = req.query;
     let query = admin.firestore().collection('sessions');
 
     if (upcoming === 'true') query = query.where('scheduledDate', '>=', new Date());
-    else if (date) { const s = new Date(date); s.setHours(0,0,0,0); query = query.where('scheduledDate', '>=', s); }
+    else if (date) { const s = new Date(date); s.setHours(0, 0, 0, 0); query = query.where('scheduledDate', '>=', s); }
     else if (startDate && endDate) query = query.where('scheduledDate', '>=', new Date(startDate)).where('scheduledDate', '<=', new Date(endDate));
 
     if (instructorId) query = query.where('instructorId', '==', instructorId);
@@ -417,15 +351,22 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
         id: doc.id,
         student: { id: data.studentId, nom: s?.nom || 'Élève inconnu', email: s?.email || '' },
         instructor: { id: data.instructorId, nom: i?.nom || 'Instructeur inconnu' },
-        course: { type: data.courseType, title: data.courseTitle },
-        schedule: { date: data.scheduledDate, time: data.scheduledTime },
+        courseType: data.courseType,
+        courseTitle: data.courseTitle,
+        scheduledDate: data.scheduledDate,
+        scheduledTime: data.scheduledTime,
+        duration: data.duration,
         status: data.status,
         reservationId: data.reservationId || null
       };
     }));
 
-    res.status(200).json({ sessions, pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) } });
+    res.status(200).json({
+      sessions,
+      pagination: { page: pageNum, limit: limitNum, total, totalPages: Math.ceil(total / limitNum) }
+    });
   } catch (error) {
+    console.error('Erreur GET /sessions:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération des sessions' });
   }
 });
@@ -434,7 +375,8 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
  * @swagger
  * /api/sessions:
  *   post:
- *     summary: Créer une session manuellement (admin)
+ *     summary: Créer une séance manuellement (admin)
+ *     description: Crée une séance directement sans passer par une réservation
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
@@ -458,6 +400,7 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
  *                 type: string
  *               courseType:
  *                 type: string
+ *                 enum: [conduite, code, examen, examen_blanc, perfectionnement]
  *               courseTitle:
  *                 type: string
  *               scheduledDate:
@@ -465,13 +408,19 @@ router.get('/', checkAuth, checkReadPermissions, async (req, res) => {
  *                 format: date-time
  *               scheduledTime:
  *                 type: string
+ *                 example: "09:00"
  *               duration:
  *                 type: number
+ *                 example: 1
+ *               notes:
+ *                 type: string
  *     responses:
  *       201:
- *         description: Session créée avec succès
+ *         description: Séance créée avec succès
  *       403:
  *         description: Accès non autorisé
+ *       500:
+ *         description: Erreur serveur
  */
 router.post('/', checkAuth, checkWritePermissions, async (req, res) => {
   try {
@@ -481,9 +430,10 @@ router.post('/', checkAuth, checkWritePermissions, async (req, res) => {
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
-    res.status(201).json({ message: 'Session créée avec succès', sessionId: sessionRef.id });
+    res.status(201).json({ message: 'Séance créée avec succès', sessionId: sessionRef.id });
   } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la création de la session' });
+    console.error('Erreur POST /sessions:', error);
+    res.status(500).json({ error: 'Erreur lors de la création de la séance' });
   }
 });
 
@@ -493,175 +443,9 @@ router.post('/', checkAuth, checkWritePermissions, async (req, res) => {
 
 /**
  * @swagger
- * /api/sessions/{sessionId}:
- *   get:
- *     summary: Détails d'une session
- *     tags: [Sessions]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: sessionId
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       200:
- *         description: Détails récupérés avec succès
- *       404:
- *         description: Session introuvable
- */
-router.get('/:sessionId', checkAuth, checkReadPermissions, async (req, res) => {
-  try {
-    const { sessionId } = req.params;
-    const sessionDoc = await admin.firestore().collection('sessions').doc(sessionId).get();
-    if (!sessionDoc.exists) return res.status(404).json({ error: 'Session introuvable' });
-
-    const data = sessionDoc.data();
-    const [studentDoc, instructorDoc] = await Promise.all([
-      admin.firestore().collection('users').doc(data.studentId).get(),
-      admin.firestore().collection('users').doc(data.instructorId).get()
-    ]);
-
-    res.status(200).json({
-      id: sessionDoc.id,
-      student: studentDoc.exists ? studentDoc.data() : null,
-      instructor: instructorDoc.exists ? instructorDoc.data() : null,
-      courseType: data.courseType, courseTitle: data.courseTitle,
-      scheduledDate: data.scheduledDate, scheduledTime: data.scheduledTime,
-      duration: data.duration, status: data.status,
-      notes: data.notes, location: data.location,
-      reservationId: data.reservationId || null,
-      createdAt: data.createdAt, updatedAt: data.updatedAt
-    });
-  } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la récupération des détails' });
-  }
-});
-
-/**
- * @swagger
- * /api/sessions/{sessionId}/status:
- *   patch:
- *     summary: Mettre à jour le statut d'une session (admin)
- *     tags: [Sessions]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: sessionId
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - status
- *             properties:
- *               status:
- *                 type: string
- *                 enum: [confirmée, présent, absent, en_retard, annulée]
- *               notes:
- *                 type: string
- *               actualStartTime:
- *                 type: string
- *               actualEndTime:
- *                 type: string
- *     responses:
- *       200:
- *         description: Statut mis à jour avec succès
- *       404:
- *         description: Session introuvable
- *       403:
- *         description: Accès non autorisé
- */
-router.patch('/:sessionId/status', checkAuth, checkWritePermissions, async (req, res) => {
-  try {
-    const { sessionId } = req.params;
-    const { status, notes, actualStartTime, actualEndTime } = req.body;
-
-    const sessionDoc = await admin.firestore().collection('sessions').doc(sessionId).get();
-    if (!sessionDoc.exists) return res.status(404).json({ error: 'Session introuvable' });
-
-    await admin.firestore().collection('sessions').doc(sessionId).update({
-      status, notes: notes || null,
-      actualStartTime: actualStartTime || null, actualEndTime: actualEndTime || null,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    res.status(200).json({ message: 'Statut mis à jour avec succès', newStatus: status });
-  } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la mise à jour du statut' });
-  }
-});
-
-/**
- * @swagger
- * /api/sessions/{sessionId}/presence:
- *   post:
- *     summary: Marquer la présence d'un élève (admin)
- *     tags: [Sessions]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: sessionId
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               notes:
- *                 type: string
- *               actualStartTime:
- *                 type: string
- *               actualEndTime:
- *                 type: string
- *     responses:
- *       200:
- *         description: Présence marquée avec succès
- *       404:
- *         description: Session introuvable
- *       403:
- *         description: Accès non autorisé
- */
-router.post('/:sessionId/presence', checkAuth, checkWritePermissions, async (req, res) => {
-  try {
-    const { sessionId } = req.params;
-    const { notes, actualStartTime, actualEndTime } = req.body || {};
-
-    const sessionRef = admin.firestore().collection('sessions').doc(sessionId);
-    const sessionDoc = await sessionRef.get();
-    if (!sessionDoc.exists) return res.status(404).json({ error: 'Session introuvable' });
-
-    await sessionRef.update({
-      status: 'présent', notes: notes || null,
-      actualStartTime: actualStartTime || null, actualEndTime: actualEndTime || null,
-      presenceMarkedAt: admin.firestore.FieldValue.serverTimestamp(),
-      presenceMarkedBy: req.user.uid,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    res.status(200).json({ message: 'Présence ajoutée avec succès', sessionId, status: 'présent' });
-  } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de l\'ajout de la présence' });
-  }
-});
-
-/**
- * @swagger
  * /api/sessions/{id}:
- *   put:
- *     summary: Modifier une séance (admin)
+ *   get:
+ *     summary: Détails d'une séance
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
@@ -673,23 +457,136 @@ router.post('/:sessionId/presence', checkAuth, checkWritePermissions, async (req
  *           type: string
  *     responses:
  *       200:
- *         description: Séance modifiée avec succès
+ *         description: Détails récupérés avec succès
  *       404:
  *         description: Séance introuvable
- *       403:
- *         description: Accès non autorisé
  */
-router.put('/:id', checkAuth, checkWritePermissions, async (req, res) => {
+router.get('/:id', checkAuth, async (req, res) => {
   try {
     const { id } = req.params;
     const sessionDoc = await admin.firestore().collection('sessions').doc(id).get();
     if (!sessionDoc.exists) return res.status(404).json({ error: 'Séance introuvable' });
 
-    await admin.firestore().collection('sessions').doc(id).update({ ...req.body, updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-    const updated = await admin.firestore().collection('sessions').doc(id).get();
-    res.status(200).json({ message: 'Séance modifiée avec succès', session: { id: updated.id, ...updated.data() } });
+    const data = sessionDoc.data();
+    const [studentDoc, instructorDoc] = await Promise.all([
+      admin.firestore().collection('users').doc(data.studentId).get(),
+      admin.firestore().collection('users').doc(data.instructorId).get()
+    ]);
+
+    res.status(200).json({
+      id: sessionDoc.id,
+      student: studentDoc.exists ? { id: data.studentId, ...studentDoc.data() } : null,
+      instructor: instructorDoc.exists ? { id: data.instructorId, ...instructorDoc.data() } : null,
+      courseType: data.courseType,
+      courseTitle: data.courseTitle,
+      scheduledDate: data.scheduledDate,
+      scheduledTime: data.scheduledTime,
+      duration: data.duration,
+      status: data.status,
+      notes: data.notes || null,
+      actualStartTime: data.actualStartTime || null,
+      actualEndTime: data.actualEndTime || null,
+      reservationId: data.reservationId || null,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt
+    });
   } catch (error) {
-    res.status(500).json({ error: 'Erreur lors de la modification de la séance' });
+    console.error('Erreur GET /sessions/:id:', error);
+    res.status(500).json({ error: 'Erreur lors de la récupération des détails' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/sessions/{id}:
+ *   patch:
+ *     summary: Mettre à jour une séance (admin)
+ *     description: |
+ *       Met à jour le statut et/ou les informations d'une séance.
+ *       Pour marquer la présence, utiliser **status: "présent"**.
+ *       Statuts disponibles : confirmée | présent | absent | en_retard | annulée
+ *     tags: [Sessions]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [confirmée, présent, absent, en_retard, annulée]
+ *                 example: "présent"
+ *               notes:
+ *                 type: string
+ *                 example: "Élève ponctuel, bonne séance"
+ *               actualStartTime:
+ *                 type: string
+ *                 example: "09:05"
+ *               actualEndTime:
+ *                 type: string
+ *                 example: "10:05"
+ *               courseTitle:
+ *                 type: string
+ *               scheduledDate:
+ *                 type: string
+ *                 format: date-time
+ *               scheduledTime:
+ *                 type: string
+ *               duration:
+ *                 type: number
+ *     responses:
+ *       200:
+ *         description: Séance mise à jour avec succès
+ *       404:
+ *         description: Séance introuvable
+ *       403:
+ *         description: Accès non autorisé
+ *       500:
+ *         description: Erreur serveur
+ */
+router.patch('/:id', checkAuth, checkWritePermissions, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, notes, actualStartTime, actualEndTime, ...rest } = req.body;
+
+    const sessionDoc = await admin.firestore().collection('sessions').doc(id).get();
+    if (!sessionDoc.exists) return res.status(404).json({ error: 'Séance introuvable' });
+
+    const updateData = {
+      ...rest,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (status) updateData.status = status;
+    if (notes !== undefined) updateData.notes = notes;
+    if (actualStartTime !== undefined) updateData.actualStartTime = actualStartTime;
+    if (actualEndTime !== undefined) updateData.actualEndTime = actualEndTime;
+
+    // ✅ Si on marque présent → enregistrer qui a marqué et quand
+    if (status === 'présent') {
+      updateData.presenceMarkedAt = admin.firestore.FieldValue.serverTimestamp();
+      updateData.presenceMarkedBy = req.user.uid;
+    }
+
+    await admin.firestore().collection('sessions').doc(id).update(updateData);
+
+    const updated = await admin.firestore().collection('sessions').doc(id).get();
+    res.status(200).json({
+      message: 'Séance mise à jour avec succès',
+      session: { id: updated.id, ...updated.data() }
+    });
+  } catch (error) {
+    console.error('Erreur PATCH /sessions/:id:', error);
+    res.status(500).json({ error: 'Erreur lors de la mise à jour de la séance' });
   }
 });
 
@@ -724,6 +621,7 @@ router.delete('/:id', checkAuth, checkWritePermissions, async (req, res) => {
     await admin.firestore().collection('sessions').doc(id).delete();
     res.status(200).json({ message: 'Séance supprimée avec succès' });
   } catch (error) {
+    console.error('Erreur DELETE /sessions/:id:', error);
     res.status(500).json({ error: 'Erreur lors de la suppression de la séance' });
   }
 });
