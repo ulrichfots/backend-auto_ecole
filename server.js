@@ -97,6 +97,12 @@ try {
 } catch (error) {
     console.error("Erreur chargement route reservations:", error.message);
 }
+try {
+    app.use('/api/notifications', require('./routes/notifications'));
+    console.log("Route /api/notifications chargee");
+} catch (error) {
+    console.error("Erreur chargement route notifications:", error.message);
+}
 // ✅ 3. Configuration Swagger
 // ... (tes imports restent les mêmes)
 

@@ -22,7 +22,6 @@ const checkAdminOnly = async (req, res, next) => {
  * /api/reservations/me:
  *   get:
  *     summary: Réservations de l'élève connecté
- *     description: Retourne toutes les réservations de l'élève connecté avec leur statut
  *     tags: [Réservations]
  *     security:
  *       - bearerAuth: []
@@ -32,47 +31,9 @@ const checkAdminOnly = async (req, res, next) => {
  *         schema:
  *           type: string
  *           enum: [all, en_cours, validee, refusee, annulee]
- *         description: Filtrer par statut
  *     responses:
  *       200:
  *         description: Réservations récupérées avec succès
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 reservations:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: string
- *                       date:
- *                         type: string
- *                         example: "2026-03-20"
- *                       time:
- *                         type: string
- *                         example: "09:00"
- *                       courseType:
- *                         type: string
- *                         example: "conduite"
- *                       instructor:
- *                         type: object
- *                       status:
- *                         type: string
- *                         enum: [en_cours, validee, refusee, annulee]
- *                       motifRefus:
- *                         type: string
- *                       createdAt:
- *                         type: string
- *                         format: date-time
- *                 total:
- *                   type: number
- *       401:
- *         description: Token invalide
- *       500:
- *         description: Erreur serveur
  */
 router.get('/me', checkAuth, async (req, res) => {
   try {
@@ -97,6 +58,8 @@ router.get('/me', checkAuth, async (req, res) => {
         id: doc.id,
         date: data.date,
         time: data.time,
+        courseCategory: data.courseCategory,
+        deliveryMode: data.deliveryMode,
         courseType: data.courseType,
         courseTitle: data.courseTitle,
         duration: data.duration,
@@ -125,7 +88,6 @@ router.get('/me', checkAuth, async (req, res) => {
  * /api/reservations:
  *   get:
  *     summary: Toutes les réservations (admin)
- *     description: Retourne toutes les réservations des élèves. Réservé à l'admin pour la gestion sur le dashboard.
  *     tags: [Réservations]
  *     security:
  *       - bearerAuth: []
@@ -136,11 +98,12 @@ router.get('/me', checkAuth, async (req, res) => {
  *           type: string
  *           enum: [all, en_cours, validee, refusee, annulee]
  *       - in: query
- *         name: studentId
+ *         name: courseCategory
  *         schema:
  *           type: string
+ *           enum: [theorique, pratique]
  *       - in: query
- *         name: instructorId
+ *         name: studentId
  *         schema:
  *           type: string
  *       - in: query
@@ -158,16 +121,15 @@ router.get('/me', checkAuth, async (req, res) => {
  *         description: Réservations récupérées avec succès
  *       403:
  *         description: Accès non autorisé
- *       500:
- *         description: Erreur serveur
  */
 router.get('/', checkAuth, checkAdminOnly, async (req, res) => {
   try {
-    const { status, studentId, instructorId, page = 1, limit = 10 } = req.query;
+    const { status, courseCategory, studentId, instructorId, page = 1, limit = 10 } = req.query;
 
     let query = admin.firestore().collection('reservations');
 
     if (status && status !== 'all') query = query.where('status', '==', status);
+    if (courseCategory) query = query.where('courseCategory', '==', courseCategory);
     if (studentId) query = query.where('studentId', '==', studentId);
     if (instructorId) query = query.where('instructorId', '==', instructorId);
 
@@ -190,6 +152,8 @@ router.get('/', checkAuth, checkAdminOnly, async (req, res) => {
         instructor: { id: data.instructorId, nom: instructorData?.nom || 'Instructeur inconnu' },
         date: data.date,
         time: data.time,
+        courseCategory: data.courseCategory,
+        deliveryMode: data.deliveryMode,
         courseType: data.courseType,
         courseTitle: data.courseTitle,
         duration: data.duration,
@@ -217,8 +181,9 @@ router.get('/', checkAuth, checkAdminOnly, async (req, res) => {
  *   post:
  *     summary: Créer une réservation (élève)
  *     description: |
- *       L'élève connecté crée une demande de réservation en choisissant une date, une heure et un type de séance.
- *       Le statut est automatiquement **en_cours** en attendant la validation de l'admin.
+ *       L'élève crée une demande de réservation.
+ *       - **Pratique** : l'élève choisit sa date et heure → une séance individuelle sera créée si validée
+ *       - **Théorique** : l'élève demande à rejoindre une session existante → il sera ajouté au groupe si validé
  *     tags: [Réservations]
  *     security:
  *       - bearerAuth: []
@@ -229,12 +194,26 @@ router.get('/', checkAuth, checkAdminOnly, async (req, res) => {
  *           schema:
  *             type: object
  *             required:
- *               - date
- *               - time
+ *               - courseCategory
+ *               - deliveryMode
  *               - courseType
  *               - instructorId
+ *               - date
+ *               - time
  *               - duration
  *             properties:
+ *               courseCategory:
+ *                 type: string
+ *                 enum: [theorique, pratique]
+ *               deliveryMode:
+ *                 type: string
+ *                 enum: [presentiel, enligne]
+ *               courseType:
+ *                 type: string
+ *               courseTitle:
+ *                 type: string
+ *               instructorId:
+ *                 type: string
  *               date:
  *                 type: string
  *                 format: date
@@ -242,67 +221,51 @@ router.get('/', checkAuth, checkAdminOnly, async (req, res) => {
  *               time:
  *                 type: string
  *                 example: "09:00"
- *               courseType:
- *                 type: string
- *                 enum: [conduite, code, examen, examen_blanc, perfectionnement]
- *               courseTitle:
- *                 type: string
- *                 example: "Séance de conduite — Ville"
- *               instructorId:
- *                 type: string
  *               duration:
  *                 type: number
- *                 example: 1
+ *               sessionId:
+ *                 type: string
+ *                 description: ID de la séance théorique existante à rejoindre (si courseCategory = theorique)
  *               notes:
  *                 type: string
- *                 example: "Première séance sur autoroute"
  *     responses:
  *       201:
  *         description: Réservation créée, en attente de validation
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: "Réservation créée avec succès, en attente de validation"
- *                 reservationId:
- *                   type: string
- *                 status:
- *                   type: string
- *                   example: "en_cours"
  *       400:
  *         description: Champs requis manquants
  *       401:
  *         description: Token invalide
- *       500:
- *         description: Erreur serveur
  */
 router.post('/', checkAuth, async (req, res) => {
   try {
-    const { date, time, courseType, courseTitle, instructorId, duration, notes } = req.body;
+    const {
+      courseCategory, deliveryMode, courseType, courseTitle,
+      instructorId, date, time, duration, sessionId, notes
+    } = req.body;
     const studentId = req.user.uid;
 
-    if (!date || !time || !courseType || !instructorId || !duration) {
+    if (!courseCategory || !deliveryMode || !courseType || !instructorId || !date || !time || !duration) {
       return res.status(400).json({
         error: 'Champs requis manquants',
-        required: ['date', 'time', 'courseType', 'instructorId', 'duration']
+        required: ['courseCategory', 'deliveryMode', 'courseType', 'instructorId', 'date', 'time', 'duration']
       });
     }
 
     const reservationRef = await admin.firestore().collection('reservations').add({
       studentId,
       instructorId,
-      date,
-      time,
+      courseCategory,
+      deliveryMode,
       courseType,
       courseTitle: courseTitle || `Séance de ${courseType}`,
+      date,
+      time,
       duration,
       notes: notes || '',
-      status: 'en_cours',  // en_cours | validee | refusee | annulee
-      sessionId: null,     // rempli automatiquement quand admin valide
-      motifRefus: null,    // rempli si admin refuse
+      sessionId: sessionId || null, // séance théorique existante à rejoindre
+      status: 'en_cours',
+      motifRefus: null,
+      createdSessionId: null, // rempli si admin valide (pratique)
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
@@ -343,8 +306,6 @@ router.post('/', checkAuth, async (req, res) => {
  *         description: Accès non autorisé
  *       404:
  *         description: Réservation introuvable
- *       401:
- *         description: Token invalide
  */
 router.get('/:id', checkAuth, async (req, res) => {
   try {
@@ -354,7 +315,6 @@ router.get('/:id', checkAuth, async (req, res) => {
 
     const data = reservationDoc.data();
 
-    // Élève accède uniquement à ses propres réservations
     if (req.user.role !== 'admin' && data.studentId !== req.user.uid) {
       return res.status(403).json({ error: 'Accès non autorisé' });
     }
@@ -368,15 +328,18 @@ router.get('/:id', checkAuth, async (req, res) => {
       id: reservationDoc.id,
       student: studentDoc.exists ? { id: data.studentId, ...studentDoc.data() } : null,
       instructor: instructorDoc.exists ? { id: data.instructorId, ...instructorDoc.data() } : null,
-      date: data.date,
-      time: data.time,
+      courseCategory: data.courseCategory,
+      deliveryMode: data.deliveryMode,
       courseType: data.courseType,
       courseTitle: data.courseTitle,
+      date: data.date,
+      time: data.time,
       duration: data.duration,
       notes: data.notes,
+      sessionId: data.sessionId || null,
       status: data.status,
       motifRefus: data.motifRefus || null,
-      sessionId: data.sessionId || null,
+      createdSessionId: data.createdSessionId || null,
       createdAt: data.createdAt?.toDate(),
       updatedAt: data.updatedAt?.toDate()
     });
@@ -392,10 +355,11 @@ router.get('/:id', checkAuth, async (req, res) => {
  *   patch:
  *     summary: Changer le statut d'une réservation
  *     description: |
- *       - **Admin** : peut valider (`validee`) ou refuser (`refusee`)
- *         - Si `validee` → une séance est **automatiquement créée** dans `sessions` avec statut `confirmée`
- *         - Si `refusee` → un motif de refus peut être précisé
- *       - **Élève** : peut uniquement annuler (`annulee`) sa propre réservation
+ *       - **Admin valide (validee)** :
+ *         - Si **pratique** → crée une nouvelle séance individuelle dans `sessions`
+ *         - Si **théorique** → ajoute l'élève à la séance existante (`sessionId`)
+ *       - **Admin refuse (refusee)** → enregistre le motif de refus
+ *       - **Élève annule (annulee)** → annule sa propre réservation
  *     tags: [Réservations]
  *     security:
  *       - bearerAuth: []
@@ -417,34 +381,17 @@ router.get('/:id', checkAuth, async (req, res) => {
  *               status:
  *                 type: string
  *                 enum: [validee, refusee, annulee]
- *                 example: "validee"
  *               motifRefus:
  *                 type: string
- *                 example: "Instructeur non disponible ce jour"
  *     responses:
  *       200:
  *         description: Statut mis à jour avec succès
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: "Réservation validée, séance créée avec succès"
- *                 status:
- *                   type: string
- *                 sessionId:
- *                   type: string
- *                   description: ID de la séance créée (uniquement si validee)
  *       400:
  *         description: Statut invalide ou réservation déjà traitée
  *       403:
  *         description: Accès non autorisé
  *       404:
  *         description: Réservation introuvable
- *       500:
- *         description: Erreur serveur
  */
 router.patch('/:id/status', checkAuth, async (req, res) => {
   try {
@@ -457,12 +404,10 @@ router.patch('/:id/status', checkAuth, async (req, res) => {
       return res.status(400).json({ error: 'Statut invalide', allowed: validStatuses });
     }
 
-    // Élève peut seulement annuler
     if (!isAdmin && status !== 'annulee') {
       return res.status(403).json({ error: 'Un élève peut uniquement annuler sa réservation' });
     }
 
-    // Admin ne peut pas annuler
     if (isAdmin && status === 'annulee') {
       return res.status(403).json({ error: 'L\'admin doit valider ou refuser, pas annuler' });
     }
@@ -472,12 +417,10 @@ router.patch('/:id/status', checkAuth, async (req, res) => {
 
     const reservationData = reservationDoc.data();
 
-    // Élève accède uniquement à sa propre réservation
     if (!isAdmin && reservationData.studentId !== req.user.uid) {
       return res.status(403).json({ error: 'Accès non autorisé' });
     }
 
-    // Réservation déjà traitée
     if (reservationData.status !== 'en_cours') {
       return res.status(400).json({
         error: 'Cette réservation a déjà été traitée',
@@ -486,30 +429,61 @@ router.patch('/:id/status', checkAuth, async (req, res) => {
     }
 
     const updateData = { status, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
-    let sessionId = null;
+    let createdSessionId = null;
 
-    // ✅ Admin valide → créer la séance automatiquement
     if (status === 'validee') {
-      const sessionRef = admin.firestore().collection('sessions').doc();
-      await sessionRef.set({
-        studentId: reservationData.studentId,
-        instructorId: reservationData.instructorId,
-        courseType: reservationData.courseType,
-        courseTitle: reservationData.courseTitle,
-        scheduledDate: admin.firestore.Timestamp.fromDate(new Date(reservationData.date)),
-        scheduledTime: reservationData.time,
-        duration: reservationData.duration,
-        notes: reservationData.notes || '',
-        status: 'confirmée',
-        reservationId: id,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-      sessionId = sessionRef.id;
-      updateData.sessionId = sessionId;
+      if (reservationData.courseCategory === 'pratique') {
+        // ✅ Pratique → créer une nouvelle séance individuelle
+        const sessionRef = admin.firestore().collection('sessions').doc();
+        await sessionRef.set({
+          courseCategory: 'pratique',
+          deliveryMode: reservationData.deliveryMode,
+          courseType: reservationData.courseType,
+          courseTitle: reservationData.courseTitle,
+          studentId: reservationData.studentId,
+          instructorId: reservationData.instructorId,
+          scheduledDate: admin.firestore.Timestamp.fromDate(new Date(reservationData.date)),
+          scheduledTime: reservationData.time,
+          duration: reservationData.duration,
+          notes: reservationData.notes || '',
+          status: 'confirmée',
+          reservationId: id,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        createdSessionId = sessionRef.id;
+        updateData.createdSessionId = createdSessionId;
+
+      } else if (reservationData.courseCategory === 'theorique' && reservationData.sessionId) {
+        // ✅ Théorique → ajouter l'élève à la séance existante
+        const sessionDoc = await admin.firestore().collection('sessions').doc(reservationData.sessionId).get();
+        if (sessionDoc.exists) {
+          const sessionData = sessionDoc.data();
+          const students = sessionData.students || [];
+          const studentIds = sessionData.studentIds || [];
+
+          if (!studentIds.includes(reservationData.studentId)) {
+            students.push({
+              studentId: reservationData.studentId,
+              status: 'confirmé',
+              presence: null,
+              addedAt: new Date().toISOString(),
+              reservationId: id
+            });
+            studentIds.push(reservationData.studentId);
+
+            await admin.firestore().collection('sessions').doc(reservationData.sessionId).update({
+              students,
+              studentIds,
+              updatedAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+          }
+          createdSessionId = reservationData.sessionId;
+          updateData.createdSessionId = createdSessionId;
+        }
+      }
     }
 
-    // ✅ Admin refuse → enregistrer le motif
     if (status === 'refusee') {
       updateData.motifRefus = motifRefus || 'Aucun motif fourni';
     }
@@ -517,7 +491,9 @@ router.patch('/:id/status', checkAuth, async (req, res) => {
     await admin.firestore().collection('reservations').doc(id).update(updateData);
 
     const messages = {
-      validee: 'Réservation validée, séance créée avec succès',
+      validee: reservationData.courseCategory === 'pratique'
+        ? 'Réservation validée, séance individuelle créée avec succès'
+        : 'Réservation validée, élève ajouté à la séance',
       refusee: 'Réservation refusée',
       annulee: 'Réservation annulée avec succès'
     };
@@ -525,7 +501,7 @@ router.patch('/:id/status', checkAuth, async (req, res) => {
     res.status(200).json({
       message: messages[status],
       status,
-      ...(sessionId && { sessionId })
+      ...(createdSessionId && { sessionId: createdSessionId })
     });
   } catch (error) {
     console.error('Erreur PATCH /reservations/:id/status:', error);
