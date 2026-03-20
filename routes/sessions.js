@@ -14,6 +14,14 @@ const checkWritePermissions = async (req, res, next) => {
 };
 
 // ============================================================
+// ✅ STATUTS SÉANCES
+// ============================================================
+// en_attente_reservation  → admin a créé la séance, aucun élève ne s'est positionné
+// en_attente_confirmation → un ou plusieurs élèves se sont positionnés, admin n'a pas encore validé
+// confirmee               → admin a validé la réservation d'un élève
+// annulee                 → séance annulée
+
+// ============================================================
 // ✅ ROUTES STATIQUES EN PREMIER
 // ============================================================
 
@@ -65,8 +73,10 @@ router.get('/stats', checkAuth, async (req, res) => {
       const monthly = monthlySnap.docs.map(doc => doc.data());
       return res.status(200).json({
         totalSessions: monthly.length,
-        confirmedSessions: monthly.filter(s => s.status === 'confirmée').length,
-        cancelledSessions: monthly.filter(s => s.status === 'annulée').length,
+        enAttenteReservation: monthly.filter(s => s.status === 'en_attente_reservation').length,
+        enAttenteConfirmation: monthly.filter(s => s.status === 'en_attente_confirmation').length,
+        confirmees: monthly.filter(s => s.status === 'confirmee').length,
+        annulees: monthly.filter(s => s.status === 'annulee').length,
         todaySessions: todaySnap.size,
         thisWeekSessions: weekSnap.size
       });
@@ -96,7 +106,7 @@ router.get('/stats', checkAuth, async (req, res) => {
         if (data.status === 'présent') presents++;
         else if (data.status === 'absent') absents++;
         else if (data.status === 'en_retard') enRetard++;
-        else if (data.status === 'annulée') annules++;
+        else if (data.status === 'annulee') annules++;
       }
     });
 
@@ -111,13 +121,31 @@ router.get('/stats', checkAuth, async (req, res) => {
  * @swagger
  * /api/sessions/types:
  *   get:
- *     summary: Types et modes de séances disponibles
+ *     summary: Types, modes et durées de séances disponibles
+ *     description: Retourne les types de séances, modes de livraison et options de durée pour les listes déroulantes
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Types récupérés avec succès
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 courseTypes:
+ *                   type: array
+ *                 deliveryModes:
+ *                   type: array
+ *                 dureeHeures:
+ *                   type: array
+ *                   description: Options heures pour liste déroulante (0 à 8)
+ *                 dureeMinutes:
+ *                   type: array
+ *                   description: Options minutes pour liste déroulante (0, 15, 30, 45)
+ *                 statuts:
+ *                   type: array
  */
 router.get('/types', checkAuth, async (req, res) => {
   res.status(200).json({
@@ -132,6 +160,15 @@ router.get('/types', checkAuth, async (req, res) => {
     deliveryModes: [
       { value: 'presentiel', label: 'Présentiel' },
       { value: 'enligne', label: 'En ligne' }
+    ],
+    // ✅ Options pour les listes déroulantes de durée
+    dureeHeures: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+    dureeMinutes: [0, 15, 30, 45],
+    statuts: [
+      { value: 'en_attente_reservation', label: 'En attente de réservation', description: 'Séance créée, aucun élève positionné' },
+      { value: 'en_attente_confirmation', label: 'En attente de confirmation', description: 'Élève(s) positionné(s), en attente de validation admin' },
+      { value: 'confirmee', label: 'Confirmée', description: 'Admin a validé la réservation' },
+      { value: 'annulee', label: 'Annulée', description: 'Séance annulée' }
     ]
   });
 });
@@ -141,7 +178,6 @@ router.get('/types', checkAuth, async (req, res) => {
  * /api/sessions/me:
  *   get:
  *     summary: Séances de l'élève connecté
- *     description: Retourne les séances confirmées + les candidatures de l'élève connecté
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
@@ -180,22 +216,11 @@ router.get('/me', checkAuth, async (req, res) => {
       const instructorDoc = await admin.firestore().collection('users').doc(data.instructorId).get();
       const instructorData = instructorDoc.exists ? instructorDoc.data() : null;
 
-      const now = new Date();
       const sessionDate = data.scheduledDate?.toDate?.() || new Date(data.scheduledDate);
-
-      // Trouver la candidature de cet élève
       const maCandidature = (data.candidats || []).find(c => c.studentId === userId);
 
-      let statusLabel = 'À venir';
-      if (data.courseCategory === 'theorique') {
-        const myPresence = (data.students || []).find(s => s.studentId === userId)?.presence;
-        if (myPresence === 'présent' && sessionDate < now) statusLabel = 'Terminé';
-        else if (myPresence === 'absent') statusLabel = 'Absent';
-      } else {
-        if (data.status === 'présent' && sessionDate < now) statusLabel = 'Terminé';
-        else if (data.status === 'absent') statusLabel = 'Absent';
-        else if (data.status === 'annulée') statusLabel = 'Annulée';
-      }
+      // Formater la durée
+      const dureeLabel = formatDuree(data.durationHeures, data.durationMinutes);
 
       return {
         id: doc.id,
@@ -205,8 +230,10 @@ router.get('/me', checkAuth, async (req, res) => {
         instructorName: instructorData?.nom || 'Instructeur inconnu',
         date: sessionDate.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }),
         time: data.scheduledTime,
-        duration: `${data.duration}h`,
-        status: statusLabel,
+        durationHeures: data.durationHeures || 0,
+        durationMinutes: data.durationMinutes || 0,
+        dureeLabel,
+        status: data.status,
         maCandidature: maCandidature ? {
           heureChoisie: maCandidature.heureChoisie,
           status: maCandidature.status
@@ -222,6 +249,16 @@ router.get('/me', checkAuth, async (req, res) => {
     res.status(500).json({ error: 'Erreur lors de la récupération des séances' });
   }
 });
+
+// ============================================================
+// ✅ FONCTION UTILITAIRE — FORMATER LA DURÉE
+// ============================================================
+const formatDuree = (heures = 0, minutes = 0) => {
+  if (heures === 0 && minutes === 0) return '0min';
+  if (heures === 0) return `${minutes}min`;
+  if (minutes === 0) return `${heures}h`;
+  return `${heures}h${minutes}`;
+};
 
 // ============================================================
 // ✅ ROUTES COLLECTION
@@ -247,6 +284,11 @@ router.get('/me', checkAuth, async (req, res) => {
  *           type: string
  *           enum: [presentiel, enligne]
  *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [en_attente_reservation, en_attente_confirmation, confirmee, annulee]
+ *       - in: query
  *         name: upcoming
  *         schema:
  *           type: boolean
@@ -255,10 +297,6 @@ router.get('/me', checkAuth, async (req, res) => {
  *         schema:
  *           type: string
  *           format: date
- *       - in: query
- *         name: status
- *         schema:
- *           type: string
  *       - in: query
  *         name: instructorId
  *         schema:
@@ -313,11 +351,14 @@ router.get('/', checkAuth, async (req, res) => {
         instructor: { id: data.instructorId, nom: instructorData?.nom || 'Instructeur inconnu' },
         scheduledDate: data.scheduledDate,
         scheduledTime: data.scheduledTime,
-        duration: data.duration,
+        durationHeures: data.durationHeures || 0,
+        durationMinutes: data.durationMinutes || 0,
+        dureeLabel: formatDuree(data.durationHeures, data.durationMinutes),
         status: data.status,
         location: data.location || null,
         meetingLink: data.meetingLink || null,
         totalCandidats: (data.candidats || []).length,
+        totalEnAttente: (data.candidats || []).filter(c => c.status === 'en_attente').length,
         totalAcceptes: (data.candidats || []).filter(c => c.status === 'accepte').length,
         totalEtudiantsInscrits: (data.students || []).length
       };
@@ -338,6 +379,9 @@ router.get('/', checkAuth, async (req, res) => {
  * /api/sessions:
  *   post:
  *     summary: Créer une séance (admin)
+ *     description: |
+ *       Crée une nouvelle séance. Le statut initial est automatiquement **en_attente_reservation**.
+ *       La durée est définie en heures ET minutes séparément pour permettre des durées comme 1h30 ou 30min.
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
@@ -354,7 +398,6 @@ router.get('/', checkAuth, async (req, res) => {
  *               - instructorId
  *               - scheduledDate
  *               - scheduledTime
- *               - duration
  *             properties:
  *               courseCategory:
  *                 type: string
@@ -374,8 +417,14 @@ router.get('/', checkAuth, async (req, res) => {
  *               scheduledTime:
  *                 type: string
  *                 example: "09:00"
- *               duration:
- *                 type: number
+ *               durationHeures:
+ *                 type: integer
+ *                 example: 1
+ *                 description: Nombre d'heures (0 si séance en minutes uniquement)
+ *               durationMinutes:
+ *                 type: integer
+ *                 example: 30
+ *                 description: Nombre de minutes (0, 15, 30 ou 45)
  *               location:
  *                 type: string
  *               meetingLink:
@@ -392,13 +441,23 @@ router.get('/', checkAuth, async (req, res) => {
  */
 router.post('/', checkAuth, checkWritePermissions, async (req, res) => {
   try {
-    const { courseCategory, deliveryMode, courseType, courseTitle, instructorId, scheduledDate, scheduledTime, duration, location, meetingLink, notes } = req.body;
+    const {
+      courseCategory, deliveryMode, courseType, courseTitle,
+      instructorId, scheduledDate, scheduledTime,
+      durationHeures = 0, durationMinutes = 0,
+      location, meetingLink, notes
+    } = req.body;
 
-    if (!courseCategory || !deliveryMode || !courseType || !instructorId || !scheduledDate || !scheduledTime || !duration) {
+    if (!courseCategory || !deliveryMode || !courseType || !instructorId || !scheduledDate || !scheduledTime) {
       return res.status(400).json({
         error: 'Champs requis manquants',
-        required: ['courseCategory', 'deliveryMode', 'courseType', 'instructorId', 'scheduledDate', 'scheduledTime', 'duration']
+        required: ['courseCategory', 'deliveryMode', 'courseType', 'instructorId', 'scheduledDate', 'scheduledTime']
       });
+    }
+
+    // Vérifier qu'il y a au moins une durée
+    if (durationHeures === 0 && durationMinutes === 0) {
+      return res.status(400).json({ error: 'La durée doit être supérieure à 0 — renseigne durationHeures et/ou durationMinutes' });
     }
 
     const sessionData = {
@@ -409,21 +468,29 @@ router.post('/', checkAuth, checkWritePermissions, async (req, res) => {
       instructorId,
       scheduledDate: admin.firestore.Timestamp.fromDate(new Date(scheduledDate)),
       scheduledTime,
-      duration,
+      durationHeures: parseInt(durationHeures) || 0,
+      durationMinutes: parseInt(durationMinutes) || 0,
+      dureeLabel: formatDuree(parseInt(durationHeures) || 0, parseInt(durationMinutes) || 0),
       location: location || null,
       meetingLink: meetingLink || null,
       notes: notes || null,
-      status: 'confirmée',
-      candidats: [],      // élèves qui se sont positionnés
-      candidatIds: [],    // pour requêtes array-contains
-      students: [],       // élèves acceptés/inscrits
-      studentIds: [],     // pour requêtes array-contains
+      // ✅ Statut initial — en attente de réservation
+      status: 'en_attente_reservation',
+      candidats: [],
+      candidatIds: [],
+      students: [],
+      studentIds: [],
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
     const sessionRef = await admin.firestore().collection('sessions').add(sessionData);
-    res.status(201).json({ message: 'Séance créée avec succès', sessionId: sessionRef.id });
+    res.status(201).json({
+      message: 'Séance créée avec succès',
+      sessionId: sessionRef.id,
+      status: 'en_attente_reservation',
+      dureeLabel: sessionData.dureeLabel
+    });
   } catch (error) {
     console.error('Erreur POST /sessions:', error);
     res.status(500).json({ error: 'Erreur lors de la création de la séance' });
@@ -440,8 +507,8 @@ router.post('/', checkAuth, checkWritePermissions, async (req, res) => {
  *   post:
  *     summary: L'élève se positionne sur une séance
  *     description: |
- *       L'élève connecté choisit une heure et se positionne sur une séance.
- *       Le statut de sa candidature est automatiquement **en_attente**.
+ *       L'élève choisit une heure et se positionne.
+ *       Le statut de la séance passe automatiquement à **en_attente_confirmation**.
  *       Pas de restriction sur les heures — plusieurs élèves peuvent choisir la même heure.
  *     tags: [Sessions]
  *     security:
@@ -464,24 +531,11 @@ router.post('/', checkAuth, checkWritePermissions, async (req, res) => {
  *               heureChoisie:
  *                 type: string
  *                 example: "09:00"
- *                 description: Heure choisie par l'élève pour cette séance
  *               notes:
  *                 type: string
- *                 example: "Je préfère le matin"
  *     responses:
  *       201:
- *         description: Candidature enregistrée, en attente de validation
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: "Vous vous êtes positionné sur cette séance"
- *                 status:
- *                   type: string
- *                   example: "en_attente"
+ *         description: Positionné avec succès, en attente de confirmation
  *       400:
  *         description: Déjà positionné sur cette séance
  *       404:
@@ -504,12 +558,10 @@ router.post('/:id/positionner', checkAuth, async (req, res) => {
     const candidatIds = sessionData.candidatIds || [];
     const candidats = sessionData.candidats || [];
 
-    // Vérifier si déjà positionné
     if (candidatIds.includes(studentId)) {
       return res.status(400).json({ error: 'Vous êtes déjà positionné sur cette séance' });
     }
 
-    // Récupérer les infos de l'élève
     const studentDoc = await admin.firestore().collection('users').doc(studentId).get();
     const studentData = studentDoc.exists ? studentDoc.data() : null;
 
@@ -519,7 +571,7 @@ router.post('/:id/positionner', checkAuth, async (req, res) => {
       email: studentData?.email || '',
       heureChoisie,
       notes: notes || '',
-      status: 'en_attente', // en_attente | accepte | refuse
+      status: 'en_attente',
       ajoutePar: 'eleve',
       createdAt: new Date().toISOString()
     };
@@ -527,13 +579,15 @@ router.post('/:id/positionner', checkAuth, async (req, res) => {
     await admin.firestore().collection('sessions').doc(id).update({
       candidats: [...candidats, nouvelleCandidature],
       candidatIds: [...candidatIds, studentId],
+      // ✅ Statut passe à en_attente_confirmation
+      status: 'en_attente_confirmation',
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
     res.status(201).json({
-      message: 'Vous vous êtes positionné sur cette séance',
-      status: 'en_attente',
-      heureChoisie
+      message: 'Vous vous êtes positionné sur cette séance, en attente de confirmation',
+      status: 'en_attente_confirmation',
+      candidature: { status: 'en_attente', heureChoisie }
     });
   } catch (error) {
     console.error('Erreur POST /:id/positionner:', error);
@@ -547,11 +601,10 @@ router.post('/:id/positionner', checkAuth, async (req, res) => {
  *   get:
  *     summary: Récupérer les candidats d'une séance
  *     description: |
- *       Retourne la liste des élèves positionnés sur une séance.
- *       - **?status=en_attente** → élèves en attente de validation
- *       - **?status=accepte** → élèves acceptés
- *       - **?status=refuse** → élèves refusés
  *       - Sans filtre → tous les candidats
+ *       - **?status=en_attente** → en attente de validation
+ *       - **?status=accepte** → acceptés
+ *       - **?status=refuse** → refusés
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
@@ -566,47 +619,9 @@ router.post('/:id/positionner', checkAuth, async (req, res) => {
  *         schema:
  *           type: string
  *           enum: [en_attente, accepte, refuse]
- *         description: Filtrer par statut
  *     responses:
  *       200:
  *         description: Candidats récupérés avec succès
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 candidats:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       studentId:
- *                         type: string
- *                       nom:
- *                         type: string
- *                       email:
- *                         type: string
- *                       heureChoisie:
- *                         type: string
- *                         example: "09:00"
- *                       status:
- *                         type: string
- *                         enum: [en_attente, accepte, refuse]
- *                       ajoutePar:
- *                         type: string
- *                         enum: [eleve, admin]
- *                       createdAt:
- *                         type: string
- *                 total:
- *                   type: number
- *                 totalEnAttente:
- *                   type: number
- *                 totalAcceptes:
- *                   type: number
- *                 totalRefuses:
- *                   type: number
- *       404:
- *         description: Séance introuvable
  */
 router.get('/:id/candidats', checkAuth, async (req, res) => {
   try {
@@ -617,14 +632,8 @@ router.get('/:id/candidats', checkAuth, async (req, res) => {
     if (!sessionDoc.exists) return res.status(404).json({ error: 'Séance introuvable' });
 
     const sessionData = sessionDoc.data();
-    let candidats = sessionData.candidats || [];
-
-    // Filtrer par statut si demandé
-    if (status) {
-      candidats = candidats.filter(c => c.status === status);
-    }
-
     const allCandidats = sessionData.candidats || [];
+    const candidats = status ? allCandidats.filter(c => c.status === status) : allCandidats;
 
     res.status(200).json({
       candidats,
@@ -643,8 +652,8 @@ router.get('/:id/candidats', checkAuth, async (req, res) => {
  * @swagger
  * /api/sessions/{id}/candidats/ajouter:
  *   post:
- *     summary: Admin sélectionne directement un élève pour une séance
- *     description: L'admin ajoute directement un élève — statut automatiquement "accepte"
+ *     summary: Admin sélectionne directement un élève (admin)
+ *     description: L'admin ajoute directement un élève — statut candidature "accepte" et séance "confirmee"
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
@@ -707,7 +716,6 @@ router.post('/:id/candidats/ajouter', checkAuth, checkWritePermissions, async (r
       return res.status(400).json({ error: 'Cet élève est déjà sur cette séance' });
     }
 
-    // Admin ajoute directement → statut accepte
     const nouvelleCandidature = {
       studentId,
       nom: studentData?.nom || 'Élève inconnu',
@@ -720,7 +728,6 @@ router.post('/:id/candidats/ajouter', checkAuth, checkWritePermissions, async (r
       createdAt: new Date().toISOString()
     };
 
-    // Ajouter aussi dans students (élèves inscrits)
     const nouvelEtudiant = {
       studentId,
       status: 'confirmé',
@@ -735,14 +742,16 @@ router.post('/:id/candidats/ajouter', checkAuth, checkWritePermissions, async (r
       candidatIds: [...candidatIds, studentId],
       students: [...students, nouvelEtudiant],
       studentIds: [...studentIds, studentId],
+      // ✅ Statut passe à confirmee
+      status: 'confirmee',
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
     res.status(201).json({
-      message: 'Élève ajouté et accepté sur la séance',
+      message: 'Élève ajouté et confirmé sur la séance',
       studentId,
       heureChoisie,
-      status: 'accepte'
+      status: 'confirmee'
     });
   } catch (error) {
     console.error('Erreur POST /:id/candidats/ajouter:', error);
@@ -756,9 +765,9 @@ router.post('/:id/candidats/ajouter', checkAuth, checkWritePermissions, async (r
  *   patch:
  *     summary: Admin accepte un élève positionné (admin)
  *     description: |
- *       L'admin accepte la candidature d'un élève.
- *       - Le statut de la candidature passe à **accepte**
- *       - L'élève est automatiquement ajouté à la liste **students** (inscrits)
+ *       - Statut candidature → **accepte**
+ *       - Statut séance → **confirmee**
+ *       - Élève ajouté automatiquement dans students
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
@@ -777,7 +786,7 @@ router.post('/:id/candidats/ajouter', checkAuth, checkWritePermissions, async (r
  *       200:
  *         description: Élève accepté avec succès
  *       404:
- *         description: Séance ou candidature introuvable
+ *         description: Candidature introuvable
  *       403:
  *         description: Accès non autorisé
  */
@@ -794,20 +803,15 @@ router.patch('/:id/candidats/:studentId/accepter', checkAuth, checkWritePermissi
     const studentIds = sessionData.studentIds || [];
 
     const candidatIndex = candidats.findIndex(c => c.studentId === studentId);
-    if (candidatIndex === -1) {
-      return res.status(404).json({ error: 'Candidature introuvable' });
-    }
+    if (candidatIndex === -1) return res.status(404).json({ error: 'Candidature introuvable' });
+    if (candidats[candidatIndex].status === 'accepte') return res.status(400).json({ error: 'Cet élève est déjà accepté' });
 
-    if (candidats[candidatIndex].status === 'accepte') {
-      return res.status(400).json({ error: 'Cet élève est déjà accepté' });
-    }
-
-    // ✅ Mettre à jour le statut de la candidature
+    // ✅ Mettre à jour candidature
     candidats[candidatIndex].status = 'accepte';
     candidats[candidatIndex].accepteAt = new Date().toISOString();
     candidats[candidatIndex].acceptePar = req.user.uid;
 
-    // ✅ Ajouter dans students si pas déjà dedans
+    // ✅ Ajouter dans students
     if (!studentIds.includes(studentId)) {
       students.push({
         studentId,
@@ -824,13 +828,16 @@ router.patch('/:id/candidats/:studentId/accepter', checkAuth, checkWritePermissi
       candidats,
       students,
       studentIds,
+      // ✅ Statut séance → confirmee
+      status: 'confirmee',
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
     res.status(200).json({
-      message: 'Élève accepté sur la séance',
+      message: 'Élève accepté — séance confirmée',
       studentId,
-      status: 'accepte',
+      candidatureStatus: 'accepte',
+      sessionStatus: 'confirmee',
       heureChoisie: candidats[candidatIndex].heureChoisie
     });
   } catch (error) {
@@ -844,7 +851,9 @@ router.patch('/:id/candidats/:studentId/accepter', checkAuth, checkWritePermissi
  * /api/sessions/{id}/candidats/{studentId}/refuser:
  *   patch:
  *     summary: Admin refuse un élève positionné (admin)
- *     description: Le statut de la candidature passe à **refuse**
+ *     description: |
+ *       - Statut candidature → **refuse**
+ *       - Si plus aucun candidat en attente → statut séance revient à **en_attente_reservation**
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
@@ -873,7 +882,7 @@ router.patch('/:id/candidats/:studentId/accepter', checkAuth, checkWritePermissi
  *       200:
  *         description: Élève refusé
  *       404:
- *         description: Séance ou candidature introuvable
+ *         description: Candidature introuvable
  *       403:
  *         description: Accès non autorisé
  */
@@ -889,29 +898,29 @@ router.patch('/:id/candidats/:studentId/refuser', checkAuth, checkWritePermissio
     const candidats = sessionData.candidats || [];
 
     const candidatIndex = candidats.findIndex(c => c.studentId === studentId);
-    if (candidatIndex === -1) {
-      return res.status(404).json({ error: 'Candidature introuvable' });
-    }
+    if (candidatIndex === -1) return res.status(404).json({ error: 'Candidature introuvable' });
+    if (candidats[candidatIndex].status === 'refuse') return res.status(400).json({ error: 'Cet élève est déjà refusé' });
 
-    if (candidats[candidatIndex].status === 'refuse') {
-      return res.status(400).json({ error: 'Cet élève est déjà refusé' });
-    }
-
-    // ✅ Mettre à jour le statut
     candidats[candidatIndex].status = 'refuse';
     candidats[candidatIndex].motifRefus = motif || 'Aucun motif précisé';
     candidats[candidatIndex].refuseAt = new Date().toISOString();
     candidats[candidatIndex].refusePar = req.user.uid;
 
+    // ✅ Si plus aucun candidat en attente → retour à en_attente_reservation
+    const encoreEnAttente = candidats.filter(c => c.status === 'en_attente').length;
+    const newStatus = encoreEnAttente > 0 ? 'en_attente_confirmation' : 'en_attente_reservation';
+
     await admin.firestore().collection('sessions').doc(id).update({
       candidats,
+      status: newStatus,
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     });
 
     res.status(200).json({
-      message: 'Élève refusé sur la séance',
+      message: 'Élève refusé',
       studentId,
-      status: 'refuse',
+      candidatureStatus: 'refuse',
+      sessionStatus: newStatus,
       motif: motif || 'Aucun motif précisé'
     });
   } catch (error) {
@@ -921,15 +930,14 @@ router.patch('/:id/candidats/:studentId/refuser', checkAuth, checkWritePermissio
 });
 
 // ============================================================
-// ✅ ROUTES PRÉSENCE ÉLÈVES INSCRITS
+// ✅ ROUTES ÉLÈVES INSCRITS
 // ============================================================
 
 /**
  * @swagger
  * /api/sessions/{id}/students:
  *   get:
- *     summary: Lister les élèves inscrits à une séance (acceptés)
- *     description: Retourne tous les élèves acceptés/inscrits sur la séance
+ *     summary: Lister les élèves inscrits/acceptés sur une séance
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
@@ -946,14 +954,12 @@ router.patch('/:id/candidats/:studentId/refuser', checkAuth, checkWritePermissio
 router.get('/:id/students', checkAuth, async (req, res) => {
   try {
     const { id } = req.params;
-
     const sessionDoc = await admin.firestore().collection('sessions').doc(id).get();
     if (!sessionDoc.exists) return res.status(404).json({ error: 'Séance introuvable' });
 
     const sessionData = sessionDoc.data();
     const students = sessionData.students || [];
 
-    // Enrichir avec les infos de chaque élève
     const studentsEnriched = await Promise.all(students.map(async (s) => {
       const studentDoc = await admin.firestore().collection('users').doc(s.studentId).get();
       const studentData = studentDoc.exists ? studentDoc.data() : null;
@@ -979,7 +985,7 @@ router.get('/:id/students', checkAuth, async (req, res) => {
  * @swagger
  * /api/sessions/{id}/students/{studentId}:
  *   patch:
- *     summary: Marquer la présence d'un élève inscrit (admin)
+ *     summary: Marquer la présence d'un élève (admin)
  *     tags: [Sessions]
  *     security:
  *       - bearerAuth: []
@@ -1031,9 +1037,7 @@ router.patch('/:id/students/:studentId', checkAuth, checkWritePermissions, async
     const students = sessionData.students || [];
 
     const studentIndex = students.findIndex(s => s.studentId === studentId);
-    if (studentIndex === -1) {
-      return res.status(404).json({ error: 'Élève non inscrit à cette séance' });
-    }
+    if (studentIndex === -1) return res.status(404).json({ error: 'Élève non inscrit à cette séance' });
 
     students[studentIndex].presence = presence;
     students[studentIndex].presenceMarkedAt = new Date().toISOString();
@@ -1084,7 +1088,6 @@ router.get('/:id', checkAuth, async (req, res) => {
     const data = sessionDoc.data();
     const instructorDoc = await admin.firestore().collection('users').doc(data.instructorId).get();
 
-    // Enrichir students
     const studentsEnriched = await Promise.all((data.students || []).map(async (s) => {
       const studentDoc = await admin.firestore().collection('users').doc(s.studentId).get();
       const studentData = studentDoc.exists ? studentDoc.data() : null;
@@ -1107,7 +1110,9 @@ router.get('/:id', checkAuth, async (req, res) => {
       instructor: instructorDoc.exists ? { id: data.instructorId, ...instructorDoc.data() } : null,
       scheduledDate: data.scheduledDate,
       scheduledTime: data.scheduledTime,
-      duration: data.duration,
+      durationHeures: data.durationHeures || 0,
+      durationMinutes: data.durationMinutes || 0,
+      dureeLabel: formatDuree(data.durationHeures, data.durationMinutes),
       status: data.status,
       location: data.location || null,
       meetingLink: data.meetingLink || null,
@@ -1150,15 +1155,17 @@ router.get('/:id', checkAuth, async (req, res) => {
  *             properties:
  *               status:
  *                 type: string
- *                 enum: [confirmée, présent, absent, en_retard, annulée]
+ *                 enum: [en_attente_reservation, en_attente_confirmation, confirmee, annulee]
  *               notes:
  *                 type: string
  *               scheduledDate:
  *                 type: string
  *               scheduledTime:
  *                 type: string
- *               duration:
- *                 type: number
+ *               durationHeures:
+ *                 type: integer
+ *               durationMinutes:
+ *                 type: integer
  *               location:
  *                 type: string
  *               meetingLink:
@@ -1174,25 +1181,31 @@ router.get('/:id', checkAuth, async (req, res) => {
 router.patch('/:id', checkAuth, checkWritePermissions, async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, notes, actualStartTime, actualEndTime, ...rest } = req.body;
+    const { status, notes, durationHeures, durationMinutes, ...rest } = req.body;
 
     const sessionDoc = await admin.firestore().collection('sessions').doc(id).get();
     if (!sessionDoc.exists) return res.status(404).json({ error: 'Séance introuvable' });
 
     const updateData = { ...rest, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+
     if (status) updateData.status = status;
     if (notes !== undefined) updateData.notes = notes;
-    if (actualStartTime !== undefined) updateData.actualStartTime = actualStartTime;
-    if (actualEndTime !== undefined) updateData.actualEndTime = actualEndTime;
-    if (status === 'présent') {
-      updateData.presenceMarkedAt = admin.firestore.FieldValue.serverTimestamp();
-      updateData.presenceMarkedBy = req.user.uid;
-    }
+    if (durationHeures !== undefined) updateData.durationHeures = parseInt(durationHeures) || 0;
+    if (durationMinutes !== undefined) updateData.durationMinutes = parseInt(durationMinutes) || 0;
+
+    // Recalculer le label de durée
+    const sessionData = sessionDoc.data();
+    const newHeures = durationHeures !== undefined ? parseInt(durationHeures) || 0 : sessionData.durationHeures || 0;
+    const newMinutes = durationMinutes !== undefined ? parseInt(durationMinutes) || 0 : sessionData.durationMinutes || 0;
+    updateData.dureeLabel = formatDuree(newHeures, newMinutes);
 
     await admin.firestore().collection('sessions').doc(id).update(updateData);
     const updated = await admin.firestore().collection('sessions').doc(id).get();
 
-    res.status(200).json({ message: 'Séance mise à jour avec succès', session: { id: updated.id, ...updated.data() } });
+    res.status(200).json({
+      message: 'Séance mise à jour avec succès',
+      session: { id: updated.id, ...updated.data() }
+    });
   } catch (error) {
     console.error('Erreur PATCH /sessions/:id:', error);
     res.status(500).json({ error: 'Erreur lors de la mise à jour' });
