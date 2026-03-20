@@ -103,6 +103,7 @@ try {
 } catch (error) {
     console.error("Erreur chargement route notifications:", error.message);
 }
+
 // ✅ 3. Configuration Swagger
 // ... (tes imports restent les mêmes)
 
