@@ -502,7 +502,7 @@ router.post('/send-reminders', async (req, res) => {
     const sessionsSnap = await admin.firestore().collection('sessions')
       .where('scheduledDate', '>=', startOfTomorrow)
       .where('scheduledDate', '<=', endOfTomorrow)
-      .where('status', '==', 'confirmée')
+      .where('status', '==', 'confirmee')
       .get();
 
     if (sessionsSnap.empty) {
