@@ -4,52 +4,37 @@ const { admin } = require('../firebase');
 const { checkAuth, checkAdmin } = require('../middlewares/authMiddleware');
 const { validate, schemas } = require('../middlewares/validationMiddleware');
 
+// ============================================================
+// ✅ FONCTION UTILITAIRE
+// ============================================================
+function getTimeAgo(date) {
+  const now = new Date();
+  const diffMs = now - date;
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+
+  if (diffDays > 0) return `Il y a ${diffDays} jour${diffDays > 1 ? 's' : ''}`;
+  else if (diffHours > 0) return `Il y a ${diffHours} heure${diffHours > 1 ? 's' : ''}`;
+  else if (diffMinutes > 0) return `Il y a ${diffMinutes} minute${diffMinutes > 1 ? 's' : ''}`;
+  else return 'À l\'instant';
+}
+
+// ============================================================
+// ✅ ROUTES
+// ============================================================
+
 /**
  * @swagger
  * /api/student/all:
  *   get:
- *     summary: Retourner la liste complète des élèves
+ *     summary: Retourner la liste complète des élèves (admin)
  *     tags: [Élève]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Liste complète des élèves récupérée avec succès
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 students:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: string
- *                         example: "abc123"
- *                       nom:
- *                         type: string
- *                         example: "Jean Dupont"
- *                       email:
- *                         type: string
- *                         example: "jean.dupont@email.com"
- *                       role:
- *                         type: string
- *                         example: "eleve"
- *                       statut:
- *                         type: string
- *                         example: "actif"
- *                       createdAt:
- *                         type: string
- *                         nullable: true
- *                         example: "2026-03-03T09:30:00.000Z"
- *       401:
- *         description: Token manquant ou invalide
- *       403:
- *         description: Accès réservé aux administrateurs
- *       500:
- *         description: Erreur serveur
  */
 router.get('/all', checkAuth, checkAdmin, async (req, res) => {
   try {
@@ -85,7 +70,10 @@ router.get('/all', checkAuth, checkAdmin, async (req, res) => {
  * @swagger
  * /api/student/progress:
  *   get:
- *     summary: Récupérer la progression d'un élève
+ *     summary: Progression de l'élève basée sur ses séances
+ *     description: |
+ *       Calcule la progression de l'élève en comptant les heures de séances
+ *       où sa présence a été marquée comme **présent** dans la collection sessions.
  *     tags: [Élève]
  *     security:
  *       - bearerAuth: []
@@ -104,89 +92,91 @@ router.get('/all', checkAuth, checkAdmin, async (req, res) => {
  *                     properties:
  *                       category:
  *                         type: string
- *                         example: "Code théorique"
  *                       type:
  *                         type: string
- *                         enum: [code, conduite, autoroute]
- *                         example: "code"
  *                       percentage:
  *                         type: number
- *                         example: 75
  *                       completedHours:
  *                         type: number
- *                         example: 30
  *                       totalHours:
  *                         type: number
- *                         example: 40
  *                       color:
  *                         type: string
- *                         example: "green"
- *       401:
- *         description: Token manquant ou invalide
- *       403:
- *         description: Accès réservé aux élèves
- *       500:
- *         description: Erreur serveur
  */
 router.get('/progress', checkAuth, async (req, res) => {
   try {
     const uid = req.user.uid;
-    
-    // Vérifier que l'utilisateur est un élève
+
     const userDoc = await admin.firestore().collection('users').doc(uid).get();
     if (!userDoc.exists || userDoc.data().role !== 'eleve') {
       return res.status(403).json({ error: 'Accès réservé aux élèves' });
     }
 
-    // Récupérer les cours terminés de l'élève
-    const completedCoursesSnapshot = await admin.firestore()
-      .collection('courses')
+    // ✅ Récupérer les séances pratiques de l'élève (studentId direct)
+    const pratiquesSnap = await admin.firestore()
+      .collection('sessions')
       .where('studentId', '==', uid)
-      .where('status', '==', 'completed')
+      .where('courseCategory', '==', 'pratique')
       .get();
 
-    const completedCourses = completedCoursesSnapshot.docs.map(doc => doc.data());
+    // ✅ Récupérer les séances théoriques de l'élève (dans students[])
+    const theoriquesSnap = await admin.firestore()
+      .collection('sessions')
+      .where('studentIds', 'array-contains', uid)
+      .get();
 
-    // Calculer la progression par catégorie
     const progressData = {
-      code: { hours: 0, total: 40 },
+      theorique: { hours: 0, total: 40 },
       conduite: { hours: 0, total: 50 },
-      autoroute: { hours: 0, total: 20 }
+      examen: { hours: 0, total: 10 }
     };
 
-    // Compter les heures par type
-    completedCourses.forEach(course => {
-      const type = course.type || 'conduite';
-      const duration = course.duration || 1; // 1 heure par défaut
-      if (progressData[type]) {
-        progressData[type].hours += duration;
+    // Compter heures théoriques — l'élève doit être marqué présent
+    theoriquesSnap.docs.forEach(doc => {
+      const data = doc.data();
+      const myPresence = (data.students || []).find(s => s.studentId === uid);
+      if (myPresence?.presence === 'présent') {
+        const heures = (data.durationHeures || 0) + ((data.durationMinutes || 0) / 60);
+        progressData.theorique.hours += heures;
       }
     });
 
-    // Formater les données de progression
+    // Compter heures pratiques — status présent
+    pratiquesSnap.docs.forEach(doc => {
+      const data = doc.data();
+      if (data.status === 'présent') {
+        const heures = (data.durationHeures || 0) + ((data.durationMinutes || 0) / 60);
+        if (data.courseType === 'examen') {
+          progressData.examen.hours += heures;
+        } else {
+          progressData.conduite.hours += heures;
+        }
+      }
+    });
+
     const progress = [
       {
-        category: 'Code théorique',
-        type: 'code',
-        percentage: Math.min(Math.round((progressData.code.hours / progressData.code.total) * 100), 100),
-        completedHours: progressData.code.hours,
-        totalHours: progressData.code.total,
+        category: 'Cours théoriques',
+        type: 'theorique',
+        percentage: Math.min(Math.round((progressData.theorique.hours / progressData.theorique.total) * 100), 100),
+        completedHours: Math.round(progressData.theorique.hours * 10) / 10,
+        totalHours: progressData.theorique.total,
         color: 'green'
       },
       {
         category: 'Conduite pratique',
         type: 'conduite',
         percentage: Math.min(Math.round((progressData.conduite.hours / progressData.conduite.total) * 100), 100),
-        completedHours: progressData.conduite.hours,
+        completedHours: Math.round(progressData.conduite.hours * 10) / 10,
         totalHours: progressData.conduite.total,
         color: 'blue'
       },
       {
-        category: 'Conduite autoroute',
-        type: 'autoroute',
-        percentage: Math.min(Math.round((progressData.autoroute.hours / progressData.autoroute.total) * 100), 100),
-        completedHours: progressData.autoroute.hours,
-        totalHours: progressData.autoroute.total,
+        category: 'Examens',
+        type: 'examen',
+        percentage: Math.min(Math.round((progressData.examen.hours / progressData.examen.total) * 100), 100),
+        completedHours: Math.round(progressData.examen.hours * 10) / 10,
+        totalHours: progressData.examen.total,
         color: 'orange'
       }
     ];
@@ -202,7 +192,8 @@ router.get('/progress', checkAuth, async (req, res) => {
  * @swagger
  * /api/student/statistics:
  *   get:
- *     summary: Récupérer les statistiques d'un élève
+ *     summary: Statistiques de l'élève basées sur ses séances
+ *     description: Calcule les statistiques depuis la collection sessions
  *     tags: [Élève]
  *     security:
  *       - bearerAuth: []
@@ -219,107 +210,86 @@ router.get('/progress', checkAuth, async (req, res) => {
  *                   properties:
  *                     totalHours:
  *                       type: object
- *                       properties:
- *                         value:
- *                           type: number
- *                           example: 28
- *                         label:
- *                           type: string
- *                           example: "Heures totales"
- *                     codeTests:
+ *                     totalSessions:
  *                       type: object
- *                       properties:
- *                         value:
- *                           type: number
- *                           example: 12
- *                         label:
- *                           type: string
- *                           example: "Tests code"
  *                     drivingHours:
  *                       type: object
- *                       properties:
- *                         value:
- *                           type: number
- *                           example: 16
- *                         label:
- *                           type: string
- *                           example: "H. conduite"
  *                     successRate:
  *                       type: object
- *                       properties:
- *                         value:
- *                           type: number
- *                           example: 85
- *                         label:
- *                           type: string
- *                           example: "Réussite"
- *                         unit:
- *                           type: string
- *                           example: "%"
- *       401:
- *         description: Token manquant ou invalide
- *       403:
- *         description: Accès réservé aux élèves
- *       500:
- *         description: Erreur serveur
  */
 router.get('/statistics', checkAuth, async (req, res) => {
   try {
     const uid = req.user.uid;
-    
-    // Vérifier que l'utilisateur est un élève
+
     const userDoc = await admin.firestore().collection('users').doc(uid).get();
     if (!userDoc.exists || userDoc.data().role !== 'eleve') {
       return res.status(403).json({ error: 'Accès réservé aux élèves' });
     }
 
-    // Récupérer tous les cours de l'élève
-    const coursesSnapshot = await admin.firestore()
-      .collection('courses')
+    // ✅ Séances pratiques
+    const pratiquesSnap = await admin.firestore()
+      .collection('sessions')
       .where('studentId', '==', uid)
+      .where('courseCategory', '==', 'pratique')
       .get();
 
-    const courses = coursesSnapshot.docs.map(doc => doc.data());
-
-    // Récupérer les tests de l'élève
-    const testsSnapshot = await admin.firestore()
-      .collection('tests')
-      .where('studentId', '==', uid)
+    // ✅ Séances théoriques
+    const theoriquesSnap = await admin.firestore()
+      .collection('sessions')
+      .where('studentIds', 'array-contains', uid)
       .get();
 
-    const tests = testsSnapshot.docs.map(doc => doc.data());
+    let totalHeures = 0;
+    let drivingHeures = 0;
+    let totalSeances = 0;
+    let seancesPresent = 0;
 
-    // Calculer les statistiques
-    const totalHours = courses.reduce((sum, course) => sum + (course.duration || 1), 0);
-    const drivingHours = courses
-      .filter(course => course.type === 'conduite' || course.type === 'autoroute')
-      .reduce((sum, course) => sum + (course.duration || 1), 0);
-    
-    const codeTests = tests.filter(test => test.type === 'code').length;
-    const passedTests = tests.filter(test => test.result === 'passed').length;
-    const successRate = tests.length > 0 ? Math.round((passedTests / tests.length) * 100) : 0;
-
-    const statistics = {
-      totalHours: {
-        value: totalHours,
-        label: 'Heures totales'
-      },
-      codeTests: {
-        value: codeTests,
-        label: 'Tests code'
-      },
-      drivingHours: {
-        value: drivingHours,
-        label: 'H. conduite'
-      },
-      successRate: {
-        value: successRate,
-        label: 'Réussite',
-        unit: '%'
+    // Théoriques
+    theoriquesSnap.docs.forEach(doc => {
+      const data = doc.data();
+      const myPresence = (data.students || []).find(s => s.studentId === uid);
+      totalSeances++;
+      if (myPresence?.presence === 'présent') {
+        seancesPresent++;
+        totalHeures += (data.durationHeures || 0) + ((data.durationMinutes || 0) / 60);
       }
-    };
+    });
 
-    res.status(200).json({ statistics });
+    // Pratiques
+    pratiquesSnap.docs.forEach(doc => {
+      const data = doc.data();
+      totalSeances++;
+      if (data.status === 'présent') {
+        seancesPresent++;
+        const heures = (data.durationHeures || 0) + ((data.durationMinutes || 0) / 60);
+        totalHeures += heures;
+        drivingHeures += heures;
+      }
+    });
+
+    const successRate = totalSeances > 0 ? Math.round((seancesPresent / totalSeances) * 100) : 0;
+
+    res.status(200).json({
+      statistics: {
+        totalHours: {
+          value: Math.round(totalHeures * 10) / 10,
+          label: 'Heures totales'
+        },
+        totalSessions: {
+          value: totalSeances,
+          label: 'Séances totales'
+        },
+        drivingHours: {
+          value: Math.round(drivingHeures * 10) / 10,
+          label: 'H. conduite'
+        },
+        successRate: {
+          value: successRate,
+          label: 'Taux de présence',
+          unit: '%'
+        }
+      }
+    });
   } catch (error) {
     console.error('Erreur récupération statistiques:', error);
     res.status(500).json({ error: 'Erreur lors de la récupération des statistiques' });
@@ -330,7 +300,8 @@ router.get('/statistics', checkAuth, async (req, res) => {
  * @swagger
  * /api/student/activity:
  *   get:
- *     summary: Récupérer l'activité récente d'un élève
+ *     summary: Activité récente de l'élève basée sur ses séances
+ *     description: Retourne les dernières séances de l'élève depuis la collection sessions
  *     tags: [Élève]
  *     security:
  *       - bearerAuth: []
@@ -339,186 +310,131 @@ router.get('/statistics', checkAuth, async (req, res) => {
  *         name: limit
  *         schema:
  *           type: integer
- *           minimum: 1
- *           maximum: 20
  *           default: 5
- *         description: Nombre maximum d'activités à retourner
  *     responses:
  *       200:
  *         description: Activité récente récupérée avec succès
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 activities:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: string
- *                         example: "activity123"
- *                       type:
- *                         type: string
- *                         enum: [test_passed, lesson_completed, lesson_scheduled]
- *                         example: "test_passed"
- *                       title:
- *                         type: string
- *                         example: "Test code réussi"
- *                       description:
- *                         type: string
- *                         example: "Code test successful"
- *                       timestamp:
- *                         type: string
- *                         format: date-time
- *                       timeAgo:
- *                         type: string
- *                         example: "Il y a 2 heures"
- *                       icon:
- *                         type: string
- *                         example: "check"
- *                       color:
- *                         type: string
- *                         example: "green"
- *       401:
- *         description: Token manquant ou invalide
- *       403:
- *         description: Accès réservé aux élèves
- *       500:
- *         description: Erreur serveur
  */
 router.get('/activity', checkAuth, async (req, res) => {
   try {
     const uid = req.user.uid;
     const limit = Math.min(parseInt(req.query.limit) || 5, 20);
-    
+
     console.log(`🔍 Récupération activité pour l'utilisateur: ${uid}`);
-    
-    // Vérifier que l'utilisateur est un élève
+
     const userDoc = await admin.firestore().collection('users').doc(uid).get();
-    if (!userDoc.exists) {
-      console.error(`❌ Utilisateur non trouvé: ${uid}`);
-      return res.status(404).json({ error: 'Utilisateur non trouvé' });
-    }
-    
-    const userData = userDoc.data();
-    if (userData.role !== 'eleve') {
-      console.error(`❌ Accès refusé - Rôle: ${userData.role}`);
-      return res.status(403).json({ error: 'Accès réservé aux élèves' });
-    }
-
-    // Récupérer les cours récents
-    let coursesSnapshot;
-    try {
-      coursesSnapshot = await admin.firestore()
-        .collection('courses')
-        .where('studentId', '==', uid)
-        .orderBy('schedule', 'desc')
-        .limit(limit)
-        .get();
-      console.log(`📚 Cours trouvés: ${coursesSnapshot.size}`);
-    } catch (error) {
-      console.error('❌ Erreur récupération cours:', error);
-      coursesSnapshot = { docs: [] }; // Fallback
-    }
-
-    // Récupérer les tests récents
-    let testsSnapshot;
-    try {
-      testsSnapshot = await admin.firestore()
-        .collection('tests')
-        .where('studentId', '==', uid)
-        .orderBy('createdAt', 'desc')
-        .limit(limit)
-        .get();
-      console.log(`📝 Tests trouvés: ${testsSnapshot.size}`);
-    } catch (error) {
-      console.error('❌ Erreur récupération tests:', error);
-      testsSnapshot = { docs: [] }; // Fallback
-    }
+    if (!userDoc.exists) return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    if (userDoc.data().role !== 'eleve') return res.status(403).json({ error: 'Accès réservé aux élèves' });
 
     const activities = [];
 
-    // Traiter les cours
-    coursesSnapshot.docs.forEach(doc => {
-      const course = doc.data();
-      const timestamp = course.schedule ? new Date(course.schedule) : new Date();
-      const timeAgo = getTimeAgo(timestamp);
-      
-      let activityType, title, description, icon, color;
-      
-      if (course.status === 'completed') {
-        activityType = 'lesson_completed';
-        title = 'Cours de conduite terminé';
-        description = 'Driving lesson finished';
-        icon = 'minus';
-        color = 'blue';
-      } else if (course.status === 'scheduled') {
-        activityType = 'lesson_scheduled';
-        title = 'Cours programmé';
-        description = 'Scheduled lesson';
-        icon = 'dot';
-        color = 'orange';
-      }
+    // ✅ Séances pratiques récentes
+    try {
+      const pratiquesSnap = await admin.firestore()
+        .collection('sessions')
+        .where('studentId', '==', uid)
+        .where('courseCategory', '==', 'pratique')
+        .orderBy('scheduledDate', 'desc')
+        .limit(limit)
+        .get();
 
-      activities.push({
-        id: doc.id,
-        type: activityType,
-        title,
-        description,
-        timestamp: timestamp.toISOString(),
-        timeAgo,
-        icon,
-        color
+      pratiquesSnap.docs.forEach(doc => {
+        const data = doc.data();
+        const timestamp = data.scheduledDate?.toDate() || new Date();
+        const timeAgo = getTimeAgo(timestamp);
+
+        let activityType, title, icon, color;
+
+        if (data.status === 'présent') {
+          activityType = 'lesson_completed';
+          title = `Séance de ${data.courseType} terminée`;
+          icon = 'check';
+          color = 'green';
+        } else if (data.status === 'confirmee') {
+          activityType = 'lesson_scheduled';
+          title = `Séance de ${data.courseType} confirmée`;
+          icon = 'dot';
+          color = 'blue';
+        } else if (data.status === 'en_attente_confirmation') {
+          activityType = 'lesson_pending';
+          title = `Séance de ${data.courseType} en attente`;
+          icon = 'clock';
+          color = 'orange';
+        } else {
+          activityType = 'lesson_scheduled';
+          title = `Séance de ${data.courseType || 'conduite'}`;
+          icon = 'dot';
+          color = 'orange';
+        }
+
+        activities.push({
+          id: doc.id,
+          type: activityType,
+          title,
+          description: data.courseTitle || title,
+          timestamp: timestamp.toISOString(),
+          timeAgo,
+          icon,
+          color
+        });
       });
-    });
-
-    // Traiter les tests
-    testsSnapshot.docs.forEach(doc => {
-      const test = doc.data();
-      const timestamp = test.createdAt ? test.createdAt.toDate() : new Date();
-      const timeAgo = getTimeAgo(timestamp);
-      
-      activities.push({
-        id: doc.id,
-        type: 'test_passed',
-        title: test.result === 'passed' ? 'Test code réussi' : 'Test code échoué',
-        description: 'Code test successful',
-        timestamp: timestamp.toISOString(),
-        timeAgo,
-        icon: 'check',
-        color: test.result === 'passed' ? 'green' : 'red'
-      });
-    });
-
-    // Trier par timestamp et limiter
-    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-    activities.splice(limit);
-
-    // Si aucune activité trouvée, retourner des données de test
-    if (activities.length === 0) {
-      console.log('📝 Aucune activité trouvée, retour de données de test');
-      activities.push({
-        id: 'test-1',
-        type: 'lesson_scheduled',
-        title: 'Cours de conduite programmé',
-        description: 'Première leçon de conduite',
-        timestamp: new Date().toISOString(),
-        timeAgo: 'Dans 2 jours',
-        icon: 'dot',
-        color: 'orange'
-      });
+    } catch (error) {
+      console.error('❌ Erreur séances pratiques:', error);
     }
 
-    console.log(`✅ Activités retournées: ${activities.length}`);
-    res.status(200).json({ activities });
+    // ✅ Séances théoriques récentes
+    try {
+      const theoriquesSnap = await admin.firestore()
+        .collection('sessions')
+        .where('studentIds', 'array-contains', uid)
+        .orderBy('scheduledDate', 'desc')
+        .limit(limit)
+        .get();
+
+      theoriquesSnap.docs.forEach(doc => {
+        const data = doc.data();
+        const timestamp = data.scheduledDate?.toDate() || new Date();
+        const timeAgo = getTimeAgo(timestamp);
+        const myPresence = (data.students || []).find(s => s.studentId === uid);
+
+        let activityType, title, icon, color;
+
+        if (myPresence?.presence === 'présent') {
+          activityType = 'lesson_completed';
+          title = `Cours théorique terminé`;
+          icon = 'check';
+          color = 'green';
+        } else {
+          activityType = 'lesson_scheduled';
+          title = `Cours théorique programmé`;
+          icon = 'dot';
+          color = 'blue';
+        }
+
+        activities.push({
+          id: doc.id,
+          type: activityType,
+          title,
+          description: data.courseTitle || title,
+          timestamp: timestamp.toISOString(),
+          timeAgo,
+          icon,
+          color
+        });
+      });
+    } catch (error) {
+      console.error('❌ Erreur séances théoriques:', error);
+    }
+
+    // Trier par date et limiter
+    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const limitedActivities = activities.slice(0, limit);
+
+    console.log(`✅ Activités retournées: ${limitedActivities.length}`);
+    res.status(200).json({ activities: limitedActivities });
   } catch (error) {
     console.error('❌ Erreur récupération activité:', error);
-    res.status(500).json({ 
-      error: 'Erreur lors de la récupération de l\'activité récente',
-      details: error.message 
-    });
+    res.status(500).json({ error: 'Erreur lors de la récupération de l\'activité récente' });
   }
 });
 
@@ -526,138 +442,104 @@ router.get('/activity', checkAuth, async (req, res) => {
  * @swagger
  * /api/student/objectives:
  *   get:
- *     summary: Récupérer les objectifs d'un élève
+ *     summary: Objectifs de l'élève
+ *     description: Retourne les objectifs de l'élève basés sur ses séances à venir
  *     tags: [Élève]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Objectifs récupérés avec succès
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 objectives:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: string
- *                         example: "objective123"
- *                       title:
- *                         type: string
- *                         example: "Examen théorique"
- *                       description:
- *                         type: string
- *                         example: "Theoretical exam"
- *                       type:
- *                         type: string
- *                         enum: [theoretical_exam, practical_exam, license_obtained]
- *                         example: "theoretical_exam"
- *                       targetDate:
- *                         type: string
- *                         format: date-time
- *                         example: "2024-01-25T00:00:00.000Z"
- *                       status:
- *                         type: string
- *                         enum: [pending, scheduled, completed]
- *                         example: "scheduled"
- *                       displayDate:
- *                         type: string
- *                         example: "Prévu le 25 janvier 2024"
- *                       icon:
- *                         type: string
- *                         example: "check"
- *                       color:
- *                         type: string
- *                         example: "green"
- *       401:
- *         description: Token manquant ou invalide
- *       403:
- *         description: Accès réservé aux élèves
- *       500:
- *         description: Erreur serveur
  */
 router.get('/objectives', checkAuth, async (req, res) => {
   try {
     const uid = req.user.uid;
-    
+
     console.log(`🎯 Récupération objectifs pour l'utilisateur: ${uid}`);
-    
-    // Vérifier que l'utilisateur est un élève
+
     const userDoc = await admin.firestore().collection('users').doc(uid).get();
-    if (!userDoc.exists) {
-      console.error(`❌ Utilisateur non trouvé: ${uid}`);
-      return res.status(404).json({ error: 'Utilisateur non trouvé' });
-    }
-    
-    const userData = userDoc.data();
-    if (userData.role !== 'eleve') {
-      console.error(`❌ Accès refusé - Rôle: ${userData.role}`);
-      return res.status(403).json({ error: 'Accès réservé aux élèves' });
-    }
+    if (!userDoc.exists) return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    if (userDoc.data().role !== 'eleve') return res.status(403).json({ error: 'Accès réservé aux élèves' });
 
-    // Récupérer les objectifs de l'élève
-    let objectivesSnapshot;
+    const objectives = [];
+
+    // ✅ Prochaine séance pratique → objectif à venir
     try {
-      objectivesSnapshot = await admin.firestore()
-        .collection('objectives')
+      const now = new Date();
+      const prochainePratiqueSnap = await admin.firestore()
+        .collection('sessions')
         .where('studentId', '==', uid)
-        .orderBy('targetDate', 'asc')
+        .where('courseCategory', '==', 'pratique')
+        .where('status', '==', 'confirmee')
+        .where('scheduledDate', '>=', now)
+        .orderBy('scheduledDate', 'asc')
+        .limit(1)
         .get();
-      console.log(`🎯 Objectifs trouvés: ${objectivesSnapshot.size}`);
+
+      if (!prochainePratiqueSnap.empty) {
+        const doc = prochainePratiqueSnap.docs[0];
+        const data = doc.data();
+        const targetDate = data.scheduledDate?.toDate();
+
+        objectives.push({
+          id: doc.id,
+          title: `Séance de ${data.courseType}`,
+          description: data.courseTitle || `Séance de ${data.courseType}`,
+          type: 'practical_session',
+          targetDate: targetDate?.toISOString(),
+          status: 'scheduled',
+          displayDate: targetDate ? `Prévu le ${targetDate.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} à ${data.scheduledTime}` : 'Date à confirmer',
+          icon: 'car',
+          color: 'blue'
+        });
+      }
     } catch (error) {
-      console.error('❌ Erreur récupération objectifs:', error);
-      objectivesSnapshot = { docs: [] }; // Fallback
+      console.error('❌ Erreur prochaine séance:', error);
     }
 
-    const objectives = objectivesSnapshot.docs.map(doc => {
-      const data = doc.data();
-      const targetDate = data.targetDate ? data.targetDate.toDate() : new Date();
-      
-      let displayDate;
-      if (data.status === 'completed') {
-        displayDate = 'Terminé';
-      } else if (data.targetDate) {
-        displayDate = `Prévu le ${targetDate.toLocaleDateString('fr-FR', { 
-          day: '2-digit', 
-          month: 'long', 
-          year: 'numeric' 
-        })}`;
-      } else {
-        displayDate = 'Objectif: mars 2024';
+    // ✅ Prochain cours théorique
+    try {
+      const now = new Date();
+      const prochaineTheoriqueSnap = await admin.firestore()
+        .collection('sessions')
+        .where('studentIds', 'array-contains', uid)
+        .where('status', '==', 'confirmee')
+        .where('scheduledDate', '>=', now)
+        .orderBy('scheduledDate', 'asc')
+        .limit(1)
+        .get();
+
+      if (!prochaineTheoriqueSnap.empty) {
+        const doc = prochaineTheoriqueSnap.docs[0];
+        const data = doc.data();
+        const targetDate = data.scheduledDate?.toDate();
+
+        objectives.push({
+          id: `theorique-${doc.id}`,
+          title: `Cours théorique`,
+          description: data.courseTitle || 'Cours théorique',
+          type: 'theoretical_session',
+          targetDate: targetDate?.toISOString(),
+          status: 'scheduled',
+          displayDate: targetDate ? `Prévu le ${targetDate.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' })} à ${data.scheduledTime}` : 'Date à confirmer',
+          icon: 'book',
+          color: 'green'
+        });
       }
+    } catch (error) {
+      console.error('❌ Erreur prochain cours théorique:', error);
+    }
 
-      return {
-        id: doc.id,
-        title: data.title,
-        description: data.description,
-        type: data.type,
-        targetDate: targetDate.toISOString(),
-        status: data.status,
-        displayDate,
-        icon: data.status === 'completed' ? 'check' : 'clock',
-        color: data.status === 'completed' ? 'green' : 'yellow'
-      };
-    });
-
-    // Si aucun objectif trouvé, retourner des données de test
+    // Si aucun objectif → message par défaut
     if (objectives.length === 0) {
-      console.log('🎯 Aucun objectif trouvé, retour de données de test');
       objectives.push({
-        id: 'test-obj-1',
-        title: 'Passer l\'examen théorique',
-        description: 'Réussir l\'examen du code de la route',
-        type: 'theoretical',
-        targetDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // Dans 30 jours
+        id: 'default-obj',
+        title: 'Aucune séance à venir',
+        description: 'Réservez une séance pour commencer',
+        type: 'no_session',
+        targetDate: null,
         status: 'pending',
-        displayDate: 'Prévu le ' + new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('fr-FR', { 
-          day: '2-digit', 
-          month: 'long', 
-          year: 'numeric' 
-        }),
+        displayDate: 'Pas de séance programmée',
         icon: 'clock',
         color: 'yellow'
       });
@@ -667,10 +549,7 @@ router.get('/objectives', checkAuth, async (req, res) => {
     res.status(200).json({ objectives });
   } catch (error) {
     console.error('❌ Erreur récupération objectifs:', error);
-    res.status(500).json({ 
-      error: 'Erreur lors de la récupération des objectifs',
-      details: error.message 
-    });
+    res.status(500).json({ error: 'Erreur lors de la récupération des objectifs' });
   }
 });
 
@@ -678,7 +557,7 @@ router.get('/objectives', checkAuth, async (req, res) => {
  * @swagger
  * /api/student/{uid}:
  *   put:
- *     summary: Modifier élève
+ *     summary: Modifier un élève (admin ou instructeur)
  *     tags: [Élève]
  *     security:
  *       - bearerAuth: []
@@ -688,36 +567,13 @@ router.get('/objectives', checkAuth, async (req, res) => {
  *         required: true
  *         schema:
  *           type: string
- *         description: Identifiant de l'élève
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/UpdateStudentProfile'
  *     responses:
  *       200:
  *         description: Élève modifié avec succès
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: "Élève modifié avec succès"
- *                 student:
- *                   type: object
- *       400:
- *         description: Données invalides
- *       401:
- *         description: Token manquant ou invalide
  *       403:
  *         description: Accès réservé aux administrateurs et instructeurs
  *       404:
  *         description: Élève introuvable
- *       500:
- *         description: Erreur serveur
  */
 router.put('/:uid', checkAuth, validate(schemas.updateStudentProfile), async (req, res) => {
   try {
@@ -733,20 +589,10 @@ router.put('/:uid', checkAuth, validate(schemas.updateStudentProfile), async (re
 
     const studentRef = admin.firestore().collection('users').doc(uid);
     const studentDoc = await studentRef.get();
-    if (!studentDoc.exists) {
-      return res.status(404).json({ error: 'Élève introuvable' });
-    }
+    if (!studentDoc.exists) return res.status(404).json({ error: 'Élève introuvable' });
+    if (studentDoc.data().role !== 'eleve') return res.status(400).json({ error: 'Cet utilisateur n\'est pas un élève' });
 
-    const studentData = studentDoc.data();
-    if (studentData.role !== 'eleve') {
-      return res.status(400).json({ error: 'Cet utilisateur n\'est pas un élève' });
-    }
-
-    const updateData = {
-      ...req.body,
-      updatedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
-
+    const updateData = { ...req.body, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
     await studentRef.update(updateData);
 
     const updatedDoc = await studentRef.get();
@@ -756,13 +602,12 @@ router.put('/:uid', checkAuth, validate(schemas.updateStudentProfile), async (re
       message: 'Élève modifié avec succès',
       student: {
         uid: updatedDoc.id,
-        nom: updatedData.nom || updatedData.nomComplet || '',
-        nomComplet: updatedData.nomComplet || updatedData.nom || '',
+        nom: updatedData.nom || '',
         email: updatedData.email || '',
         role: updatedData.role || 'eleve',
-        statut: updatedData.statut || updatedData.status || '',
-        telephone: updatedData.telephone || updatedData.phone || '',
-        adresse: updatedData.adresse || updatedData.address || '',
+        statut: updatedData.statut || '',
+        telephone: updatedData.telephone || '',
+        adresse: updatedData.adresse || '',
         licenseType: updatedData.licenseType || 'B'
       }
     });
@@ -771,24 +616,5 @@ router.put('/:uid', checkAuth, validate(schemas.updateStudentProfile), async (re
     return res.status(500).json({ error: 'Erreur lors de la modification de l\'élève' });
   }
 });
-
-// Fonction utilitaire pour calculer le temps écoulé
-function getTimeAgo(date) {
-  const now = new Date();
-  const diffMs = now - date;
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-  const diffMinutes = Math.floor(diffMs / (1000 * 60));
-
-  if (diffDays > 0) {
-    return `Il y a ${diffDays} jour${diffDays > 1 ? 's' : ''}`;
-  } else if (diffHours > 0) {
-    return `Il y a ${diffHours} heure${diffHours > 1 ? 's' : ''}`;
-  } else if (diffMinutes > 0) {
-    return `Il y a ${diffMinutes} minute${diffMinutes > 1 ? 's' : ''}`;
-  } else {
-    return 'À l\'instant';
-  }
-}
 
 module.exports = router;
