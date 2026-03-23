@@ -3,12 +3,14 @@ const nodemailer = require('nodemailer');
 
 class EmailService {
   constructor() {
-    // On récupère le mot de passe depuis l'une ou l'autre des variables
     const password = (process.env.SMTP_PASS || process.env.EMAIL_PASSWORD || '').trim();
     const user = (process.env.SMTP_USER || 'amenouveveyesu@gmail.com').trim();
 
+    // ✅ Config explicite port 465 avec SSL
     this.transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true, // true pour port 465
       auth: {
         user: user,
         pass: password
@@ -46,7 +48,7 @@ class EmailService {
     
     const mailOptions = {
       from: `"Auto École" <${this.transporter.options.auth.user}>`,
-      to: 'amenouveveyesu@gmail.com', // Ton email admin
+      to: 'amenouveveyesu@gmail.com',
       subject: `🚨 Nouvelle inscription - ${nomComplet}`,
       html: this.generateAdminNotificationTemplate({
         nomComplet,
@@ -103,15 +105,14 @@ class EmailService {
     }
   }
 
-  // --- TEMPLATES ---
   generateStudentConfirmationTemplate(data) {
     const { nomComplet, dateDebut, heurePreferee, formation } = data;
-    return `<html>...ton HTML...</html>`; // Garde ton HTML ici
+    return `<html>...ton HTML...</html>`;
   }
 
   generateAdminNotificationTemplate(data) {
     const { nomComplet, email, telephone, adresse, dateDebut, heurePreferee, formation } = data;
-    return `<html>...ton HTML...</html>`; // Garde ton HTML ici
+    return `<html>...ton HTML...</html>`;
   }
 
   async verifyConnection() {
