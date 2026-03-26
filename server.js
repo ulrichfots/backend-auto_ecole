@@ -104,6 +104,42 @@ try {
     console.error("Erreur chargement route notifications:", error.message);
 }
 
+// ✅ Endpoint de test SMTP
+const emailService = require('./services/emailService');
+app.get('/api/test-smtp', async (req, res) => {
+  try {
+    console.log('🧪 Test de connexion SMTP...');
+    const isConnected = await emailService.verifyConnection();
+    
+    if (isConnected) {
+      res.json({
+        success: true,
+        message: '✅ Connexion SMTP réussie',
+        config: {
+          host: process.env.SMTP_HOST,
+          port: process.env.SMTP_PORT,
+          user: process.env.SMTP_USER
+        }
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: '❌ Connexion SMTP échouée',
+        config: {
+          host: process.env.SMTP_HOST,
+          port: process.env.SMTP_PORT,
+          user: process.env.SMTP_USER
+        }
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // ✅ 3. Configuration Swagger
 // ... (tes imports restent les mêmes)
 

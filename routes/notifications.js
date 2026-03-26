@@ -173,16 +173,21 @@ const emailTemplates = {
 
 const sendEmail = async (to, template) => {
   try {
-    await emailService.transporter.sendMail({
+    console.log(`📨 Tentative d'envoi à ${to}...`);
+    const result = await emailService.transporter.sendMail({
       from: `"Auto-École" <${process.env.SMTP_USER}>`,
       to,
       subject: template.subject,
       html: template.html
     });
-    console.log(`✅ Email envoyé à ${to}`);
+    console.log(`✅ Email envoyé à ${to} (ID: ${result.messageId})`);
     return true;
   } catch (error) {
-    console.error(`❌ Erreur email à ${to}:`, error.message);
+    console.error(`❌ Erreur email à ${to}:`, {
+      message: error.message,
+      code: error.code,
+      command: error.command
+    });
     return false;
   }
 };

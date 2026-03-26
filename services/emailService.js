@@ -6,19 +6,36 @@ class EmailService {
     const password = (process.env.SMTP_PASS || process.env.EMAIL_PASSWORD || '').trim();
     const user = (process.env.SMTP_USER || 'amenouveveyesu@gmail.com').trim();
     const port = parseInt(process.env.SMTP_PORT || '587', 10);
+    const host = process.env.SMTP_HOST || 'smtp.gmail.com';
 
-    // ✅ Config dynamique: Port 587 (TLS) ou 465 (SSL)
+    console.log(`📧 Configuration SMTP:`, { host, port, user: user.substring(0, 5) + '***' });
+
+    // ✅ Configuration optimisée pour Gmail
     this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      host: host,
       port: port,
-      secure: port === 465, // true pour port 465 (SSL), false pour 587 (TLS)
+      secure: port === 465, // false pour 587 (TLS), true pour 465 (SSL)
       auth: {
         user: user,
         pass: password
       },
-      connectionTimeout: 10000, // 10 secondes timeout
-      socketTimeout: 10000
+      // ✅ Timeouts augmentés et pool pour meilleures performances
+      connectionTimeout: 15000,
+      socketTimeout: 15000,
+      pool: {
+        maxConnections: 5,
+        maxMessages: 100,
+        rateDelta: 2000,
+        rateLimit: 5
+      },
+      // ✅ Retry automatique
+      tls: {
+        rejectUnauthorized: false
+      }
     });
+
+    // ✅ Vérify connection au démarrage
+    this.verifyConnection();
   }
 
   async sendConfirmationToStudent(registrationData) {
