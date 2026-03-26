@@ -370,11 +370,29 @@ router.post('/', async (req, res) => {
     const userData = null;
     const firebaseUser = null;
 
-    // Notifications en mode dashboard uniquement (pas d'envoi email)
-    const emailsSent = {
-      student: { success: false, error: 'Notification email desactivee (dashboard uniquement)' },
-      admin: { success: false, error: 'Notification email desactivee (dashboard uniquement)' }
+    // ✅ Envoi des emails de confirmation (activation)
+    let emailsSent = {
+      student: { success: false },
+      admin: { success: false }
     };
+
+    // Envoyer email à l'étudiant
+    try {
+      const studentEmail = await emailService.sendConfirmationToStudent(registrationData);
+      emailsSent.student = studentEmail;
+    } catch (error) {
+      console.error('❌ Erreur envoi email étudiant:', error.message);
+      emailsSent.student = { success: false, error: error.message };
+    }
+
+    // Envoyer email à l'admin
+    try {
+      const adminEmail = await emailService.sendNotificationToAdmin(registrationData);
+      emailsSent.admin = adminEmail;
+    } catch (error) {
+      console.error('❌ Erreur envoi email admin:', error.message);
+      emailsSent.admin = { success: false, error: error.message };
+    }
 
     // Réponse de succès
     res.status(201).json({

@@ -5,16 +5,19 @@ class EmailService {
   constructor() {
     const password = (process.env.SMTP_PASS || process.env.EMAIL_PASSWORD || '').trim();
     const user = (process.env.SMTP_USER || 'amenouveveyesu@gmail.com').trim();
+    const port = parseInt(process.env.SMTP_PORT || '587', 10);
 
-    // ✅ Config explicite port 465 avec SSL
+    // ✅ Config dynamique: Port 587 (TLS) ou 465 (SSL)
     this.transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true, // true pour port 465
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: port,
+      secure: port === 465, // true pour port 465 (SSL), false pour 587 (TLS)
       auth: {
         user: user,
         pass: password
-      }
+      },
+      connectionTimeout: 10000, // 10 secondes timeout
+      socketTimeout: 10000
     });
   }
 
@@ -107,12 +110,57 @@ class EmailService {
 
   generateStudentConfirmationTemplate(data) {
     const { nomComplet, dateDebut, heurePreferee, formation } = data;
-    return `<html>...ton HTML...</html>`;
+    return `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;">
+        <div style="background: #1e3a8a; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h1 style="margin: 0;">🚗 Confirmation d'inscription</h1>
+        </div>
+        <div style="padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+          <p>Bonjour <strong>${nomComplet}</strong>,</p>
+          <p>Merci de votre inscription à nos services de formation de conduite !</p>
+          <div style="background: #f0f9ff; border-left: 4px solid #1e3a8a; padding: 15px; margin: 20px 0; border-radius: 4px;">
+            <h3 style="margin-top: 0; color: #1e3a8a;">Détails de votre inscription :</h3>
+            <p><strong>📅 Date souhaitée :</strong> ${dateDebut}</p>
+            <p><strong>🕐 Heure préférée :</strong> ${heurePreferee}</p>
+            <p><strong>📚 Formation :</strong> ${formation}</p>
+          </div>
+          <p>Nous avons bien reçu votre demande d'inscription. Un responsable de l'auto-école vous contactera très bientôt pour confirmer votre rendez-vous.</p>
+          <p style="color: #666; font-size: 13px;">✏️ <strong>Important :</strong> Vérifiez votre dossier de spam si vous ne recevez pas de confirmation dans les 24 heures.</p>
+          <p>Cordialement,<br><strong>L'équipe Auto-École</strong></p>
+        </div>
+        <p style="text-align: center; color: #999; font-size: 12px; margin-top: 20px;">© Auto-École 2026</p>
+      </div>
+    `;
   }
 
   generateAdminNotificationTemplate(data) {
     const { nomComplet, email, telephone, adresse, dateDebut, heurePreferee, formation } = data;
-    return `<html>...ton HTML...</html>`;
+    return `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto;">
+        <div style="background: #dc2626; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0;">
+          <h1 style="margin: 0;">🚨 Nouvelle inscription reçue</h1>
+        </div>
+        <div style="padding: 30px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+          <p><strong>Une nouvelle inscription a été enregistrée dans le système.</strong></p>
+          <div style="background: #fef2f2; border-left: 4px solid #dc2626; padding: 15px; margin: 20px 0; border-radius: 4px;">
+            <h3 style="margin-top: 0; color: #dc2626;">Informations de l'inscrit :</h3>
+            <p><strong>👤 Nom :</strong> ${nomComplet}</p>
+            <p><strong>📧 Email :</strong> ${email}</p>
+            <p><strong>📱 Téléphone :</strong> ${telephone}</p>
+            <p><strong>📍 Adresse :</strong> ${adresse}</p>
+          </div>
+          <div style="background: #f0f9ff; border-left: 4px solid #1e3a8a; padding: 15px; margin: 20px 0; border-radius: 4px;">
+            <h3 style="margin-top: 0; color: #1e3a8a;">Détails du rendez-vous demandé :</h3>
+            <p><strong>📅 Date :</strong> ${dateDebut}</p>
+            <p><strong>🕐 Heure :</strong> ${heurePreferee}</p>
+            <p><strong>📚 Formation :</strong> ${formation}</p>
+          </div>
+          <p style="color: #666; font-size: 13px;">⏰ <strong>Action requise :</strong> Connectez-vous à votre tableau de bord pour valider ou refuser cette inscription.</p>
+          <p>Cordialement,<br><strong>Système Auto-École</strong></p>
+        </div>
+        <p style="text-align: center; color: #999; font-size: 12px; margin-top: 20px;">© Auto-École 2026</p>
+      </div>
+    `;
   }
 
   async verifyConnection() {
